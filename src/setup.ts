@@ -185,12 +185,7 @@ export async function runPanelEditor(
 		if (!proceed) return null;
 	}
 
-	const confirmed = await ctx.ui.confirm(
-		"Confirm panel",
-		`Panel configuration:\n${summarize(config)}\n\nWritten to settings.json under panel. Re-run /panel-setup anytime to change.`,
-	);
-	if (!confirmed) return null;
-
+	// "Done — save" is the confirmation; no redundant dialog after it.
 	writePanelConfig(config, settingsPath);
 	ctx.ui.notify(`Panel saved:\n${summarize(config)}`, "info");
 	return config.seats;
