@@ -95,13 +95,21 @@ return results.map((r, i) => ({ ...mapResult(r, SEATS[i].name), resumed: resumed
 `;
 }
 
-/** Single-worker workflow (fixer or implementer). Model omitted when null (session model). */
+/** Single-worker workflow (fixer or implementer). Model omitted when null (session model).
+ *  runs.run REJECTS on child failure (unlike runs.all, which collects) — wrap it
+ *  so a crashed worker returns a clean { ok: false } instead of failing the
+ *  whole workflow and losing the error context. */
 export function workerScript(key: string, model: string | null, task: string): string {
 	return `
 const PARAMS = { agent: "worker", context: "fresh", task: ${JSON.stringify(task)} };
 const MODEL = ${JSON.stringify(model)};
 if (MODEL) PARAMS.model = MODEL;
-const r = await runs.run(${JSON.stringify(key)}, PARAMS);
+let r;
+try {
+	r = await runs.run(${JSON.stringify(key)}, PARAMS);
+} catch (e) {
+	return { ok: false, runId: null, output: "", error: "worker run threw: " + String(e && e.message ? e.message : e) };
+}
 return {
 	ok: Boolean(r && r.ok),
 	runId: r && r.runId ? String(r.runId) : null,

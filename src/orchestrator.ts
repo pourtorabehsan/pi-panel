@@ -88,6 +88,14 @@ interface RoundState {
 	dropNotes: string[];
 	deliberationRound: number;
 	freshFallbackSeats: string[];
+	/** Latest result per seat, merged across retry waves (retry overwrites failure). */
+	collected: Record<string, SeatRoundResult>;
+	/** Per-seat cursor into config seat fallbacks (next fallback index to try). */
+	fallbackCursor: Record<string, number>;
+	/** Brief of the in-flight review phase (reused verbatim for retry waves). */
+	brief: string | null;
+	/** Context of the in-flight deliberation phase (reused for retry waves). */
+	delib: { d: number; task: string; fallbackPrefix: string } | null;
 }
 
 const STATUS_KEY = "panel";
@@ -193,6 +201,10 @@ export class PanelRun {
 			dropNotes: [],
 			deliberationRound: 0,
 			freshFallbackSeats: [],
+			collected: {},
+			fallbackCursor: {},
+			brief: null,
+			delib: null,
 		};
 	}
 
@@ -234,8 +246,55 @@ export class PanelRun {
 		const brief = isFirst
 			? round1Brief(round.targetDescription, round.diffPath)
 			: anchoredBrief(round.n, this.prevRoundDir(), round.fixSha ?? "the current uncommitted working-tree changes", round.diffPath);
+		round.brief = brief;
 		const script = reviewRoundScript(seats, brief, isFirst ? FINDINGS_SCHEMA : VERDICTS_SCHEMA, `r${round.n}-`);
 		await this.spawnPhase(script, `round ${round.n}: reviewing (${seats.map((s) => s.name).join(", ")})`, "review");
+	}
+
+	/**
+	 * Merge the latest wave's seat results into round.collected, then — if any
+	 * seat still fails and has configured fallbacks left — spawn a retry wave
+	 * for just those seats on their next fallback model. Returns true when a
+	 * retry wave was spawned (the caller must return and wait for it).
+	 */
+	private async mergeAndRetry(seats: SeatRoundResult[]): Promise<SeatRoundResult[] | null> {
+		const round = this.requireRound();
+		for (const s of seats) {
+			if (s.runId) round.seatRunIds[s.seat] = s.runId;
+			round.collected[s.seat] = s;
+		}
+		const merged = this.deps.config.seats.map((cfg) =>
+			round.collected[cfg.name] ?? { seat: cfg.name, ok: false, runId: null, structured: null, output: "", error: "no result" },
+		);
+		const retriable = merged.filter((s) => {
+			if (s.ok) return false;
+			const cfg = this.deps.config.seats.find((c) => c.name === s.seat);
+			const cursor = round.fallbackCursor[s.seat] ?? 0;
+			return (cfg?.fallbacks?.length ?? 0) > cursor;
+		});
+		if (retriable.length === 0) return merged;
+
+		const retrySeats = retriable.map((s) => {
+			const cfg = this.deps.config.seats.find((c) => c.name === s.seat)!;
+			const idx = round.fallbackCursor[s.seat] ?? 0;
+			round.fallbackCursor[s.seat] = idx + 1;
+			return { name: s.seat, model: cfg.fallbacks![idx] };
+		});
+		this.deps.ui.notify(
+			`Seat(s) ${retriable.map((s) => s.seat).join(", ")} failed; retrying on fallback: ${retrySeats.map((s) => `${s.name}→${s.model}`).join(", ")}`,
+			"warning",
+		);
+		if (this.phase === "review") {
+			const schema = round.n === 1 ? FINDINGS_SCHEMA : VERDICTS_SCHEMA;
+			const script = reviewRoundScript(retrySeats, round.brief!, schema, `r${round.n}-retry-`);
+			await this.spawnPhase(script, `round ${round.n}: retrying ${retriable.map((s) => s.seat).join(", ")} on fallback models`, "review");
+		} else {
+			const dctx = round.delib!;
+			// Retry seats run fresh on the fallback model (no retained session to resume).
+			const script = deliberationScript(retrySeats.map((s) => ({ ...s, runId: null })), dctx.d, dctx.task, dctx.fallbackPrefix, VOTES_SCHEMA);
+			await this.spawnPhase(script, `round ${round.n}: deliberation ${dctx.d} retry on fallback models`, "deliberate");
+		}
+		return null;
 	}
 
 	private async spawnDeliberation(contested: ClusterReportEntry[], disputes: VerificationDisputePayload[]): Promise<void> {
@@ -260,8 +319,10 @@ export class PanelRun {
 			}
 		}
 		const task = deliberationTask(d, contestedPayload, disputes, previousVotes);
+		const fallbackPrefix = freshDeliberationPrefix(round.dir);
+		round.delib = { d, task, fallbackPrefix };
 		const seats = this.deps.config.seats.map((s) => ({ name: s.name, model: s.model, runId: round.seatRunIds[s.name] ?? null }));
-		const script = deliberationScript(seats, d, task, freshDeliberationPrefix(round.dir), VOTES_SCHEMA);
+		const script = deliberationScript(seats, d, task, fallbackPrefix, VOTES_SCHEMA);
 		await this.spawnPhase(script, `round ${round.n}: deliberation ${d} (${contested.length + disputes.length} item(s))`, "deliberate");
 	}
 
@@ -338,8 +399,10 @@ export class PanelRun {
 
 	private async advanceReview(value: unknown): Promise<void> {
 		const round = this.requireRound();
-		const seats = this.parseSeatResults(value);
-		for (const s of seats) round.seatRunIds[s.seat] = s.runId;
+		const merged = await this.mergeAndRetry(this.parseSeatResults(value));
+		if (!merged) return; // retry wave spawned — wait for its completion
+		const seats = merged;
+		round.failedSeats = []; // recomputed from the final merged results below
 
 		if (round.n === 1) {
 			const bySeat: Array<{ seat: string; findings: Finding[] }> = [];
@@ -459,7 +522,9 @@ export class PanelRun {
 
 	private async advanceDeliberation(value: unknown): Promise<void> {
 		const round = this.requireRound();
-		const seats = this.parseSeatResults(value);
+		const merged = await this.mergeAndRetry(this.parseSeatResults(value));
+		if (!merged) return; // retry wave spawned
+		const seats = merged;
 		for (const s of seats) {
 			if (s.runId) round.seatRunIds[s.seat] = s.runId;
 			if (s.resumed === false) round.freshFallbackSeats.push(s.seat);
@@ -609,6 +674,10 @@ export class PanelRun {
 			dropNotes: [],
 			deliberationRound: 0,
 			freshFallbackSeats: [],
+			collected: {},
+			fallbackCursor: {},
+			brief: null,
+			delib: null,
 		};
 		await this.spawnReview();
 	}

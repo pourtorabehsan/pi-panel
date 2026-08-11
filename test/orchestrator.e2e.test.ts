@@ -57,7 +57,7 @@ function makeFakeRpc(repo: string, g: (a: string[]) => string, scripted: Scripte
 			const asyncDir = join(asyncRoot, asyncId);
 			mkdirSync(asyncDir, { recursive: true });
 			let value: unknown;
-			if (description.includes("reviewing")) {
+			if (description.includes("reviewing") || description.includes("retrying")) {
 				if (scripted.mutateDuringReview) writeFileSync(join(repo, "evil.ts"), "// seat wrote this\n");
 				value = scripted.reviewValue;
 			} else if (description.includes("deliberation 1")) value = scripted.deliberation1;
@@ -226,4 +226,89 @@ test("loop entry: clean tree + no args errors with a helpful hint", async () => 
 	g(["commit", "-m", "clean tree"]);
 	const run = makeRun(repo, makeFakeRpc(repo, g, { descriptions: [] }), "loop");
 	await assert.rejects(() => run.startLoop(""), /panel-loop main/);
+});
+
+test("seat failure: retried on configured fallback model, panel completes at full strength", async () => {
+	const { repo, g } = makeRepo();
+	const scripted: ScriptedRpc = {
+		descriptions: [],
+		reviewValue: [
+			{ seat: "kimi", ok: true, runId: "k1", structured: { findings: [finding("f1", "shared bug")] }, output: "", error: null },
+			{ seat: "sol", ok: true, runId: "s1", structured: { findings: [finding("g1", "shared bug")] }, output: "", error: null },
+			{ seat: "glm", ok: false, runId: null, structured: null, output: "", error: "no credits remaining" },
+		],
+	};
+	const rpc = makeFakeRpc(repo, g, scripted);
+	scripted.onFix = () => {
+		writeFileSync(join(repo, "a.ts"), "export const x = 1;\nexport const y = x + 1; // fixed\n");
+		g(["add", "a.ts"]);
+		g(["commit", "-m", "fix shared bug", "-m", "Panel-Loop: round 1"]);
+		scripted.reviewValue = [
+			{ seat: "kimi", ok: true, runId: "k3", structured: { verdicts: [{ clusterId: "c1", verdict: "resolved", evidence: "checked" }], newFindings: [] }, output: "", error: null },
+			{ seat: "sol", ok: true, runId: "s3", structured: { verdicts: [{ clusterId: "c1", verdict: "resolved", evidence: "checked" }], newFindings: [] }, output: "", error: null },
+			{ seat: "glm", ok: true, runId: "g3", structured: { verdicts: [{ clusterId: "c1", verdict: "resolved", evidence: "checked" }], newFindings: [] }, output: "", error: null },
+		];
+	};
+	// second spawn (the retry wave) succeeds for glm
+	const origSpawn = rpc.spawn.bind(rpc);
+	rpc.spawn = async (script: string, description: string) => {
+		if (description.includes("retrying")) {
+			scripted.reviewValue = [
+				{ seat: "glm", ok: true, runId: "g2", structured: { findings: [finding("z1", "shared bug")] }, output: "", error: null },
+			];
+		}
+		return origSpawn(script, description);
+	};
+	const config = {
+		...DEFAULT_CONFIG,
+		seats: [
+			{ name: "kimi", model: "m/kimi" },
+			{ name: "sol", model: "m/sol" },
+			{ name: "glm", model: "m/glm", fallbacks: ["m/glm-fallback"] },
+		],
+	};
+	const run = new PanelRun({
+		rpc: rpc as never, config, configWarnings: [], cwd: repo,
+		ui: { notify: () => {}, setStatus: () => {} }, onSettled: () => {},
+	}, "loop");
+	await run.startLoop("");
+	await pump(run);
+
+	assert.equal(run.phase, "done");
+	assert.ok(scripted.descriptions.some((d) => d.includes("retrying glm on fallback")));
+	const clusters = JSON.parse(readFileSync(join(run.runDir, "round-1", "clusters.json"), "utf8"));
+	assert.deepEqual(clusters[0].raisers.sort(), ["glm", "kimi", "sol"]); // all 3 seats contributed
+});
+
+test("seat failure with fallbacks exhausted: panel degrades to 2 seats with a note", async () => {
+	const { repo, g } = makeRepo();
+	const scripted: ScriptedRpc = {
+		descriptions: [],
+		reviewValue: [
+			{ seat: "kimi", ok: true, runId: "k1", structured: { findings: [finding("f1", "shared bug")] }, output: "", error: null },
+			{ seat: "sol", ok: true, runId: "s1", structured: { findings: [finding("g1", "shared bug")] }, output: "", error: null },
+			{ seat: "glm", ok: false, runId: null, structured: null, output: "", error: "no credits remaining" },
+		],
+	};
+	const config = {
+		...DEFAULT_CONFIG,
+		seats: [
+			{ name: "kimi", model: "m/kimi" },
+			{ name: "sol", model: "m/sol" },
+			{ name: "glm", model: "m/glm", fallbacks: ["m/still-broken"] },
+		],
+	};
+	const run = new PanelRun({
+		rpc: makeFakeRpc(repo, g, scripted) as never, config, configWarnings: [], cwd: repo,
+		ui: { notify: () => {}, setStatus: () => {} }, onSettled: () => {},
+	}, "review");
+	const { target } = run.planReview("");
+	await run.startReview(target);
+	await pump(run);
+
+	assert.equal(run.phase, "done"); // 2 seats is still a panel
+	assert.ok(scripted.descriptions.some((d) => d.includes("retrying glm"))); // fallback attempted once
+	const consensus = readFileSync(join(run.runDir, "round-1", "consensus.md"), "utf8");
+	assert.match(consensus, /glm/); // failure noted
+	assert.match(consensus, /Accepted \/ still open \(1\)/); // 2-seat finding still accepted
 });

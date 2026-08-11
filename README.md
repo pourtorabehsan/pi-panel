@@ -66,7 +66,7 @@ Or for local development from a clone, add to `~/.pi/agent/settings.json`:
   "panel": {
     "seats": [
       { "name": "kimi", "model": "fireworks/accounts/fireworks/models/kimi-k3" },
-      { "name": "sol",  "model": "openai/gpt-5.6-sol" },
+      { "name": "sol",  "model": "openai/gpt-5.6-sol", "fallbacks": ["openai/gpt-5.5"] },
       { "name": "glm",  "model": "fireworks/accounts/fireworks/models/glm-5p2" }
     ],
     "implementer": null,
@@ -147,7 +147,7 @@ These are enforced by pi-subagents' current runtime behavior, verified against i
 | Symptom | Cause / fix |
 |---|---|
 | "pi-panel requires the pi-subagents package" | `pi install npm:pi-subagents`, then restart pi. |
-| Seat failed / "panel degraded" warnings | A model id is wrong or a provider is unauthenticated. Check `panel.seats` against `pi --list-models`. The panel runs fine with 2 seats; 2 failures abort the run. |
+| Seat failed / "panel degraded" warnings | A model id is wrong or a provider is unauthenticated. Check `panel.seats` against `pi --list-models`. Configure per-seat `fallbacks` to auto-retry on another model. The panel runs fine with 2 seats; 2 failures abort the run. |
 | "deliberation used fresh-seat fallback" in consensus notes | The retained-resume path wasn't available for a seat; deliberation fell back to a fresh reviewer reading the round artifacts (weaker context, still correct votes). |
 | Orphaned run after `/reload` or restart | In-memory state is lost by design (v1). Artifacts are on disk; just re-run the command. |
 | "Detached for intercom coordination" | A child tried to ask its supervisor a question, which kills RPC-spawned workflows. All panel briefs forbid intercom; if you still see this, the child ignored its instructions — report it and re-run. |

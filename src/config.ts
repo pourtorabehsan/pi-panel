@@ -5,6 +5,8 @@ import { join } from "node:path";
 export interface SeatConfig {
 	name: string;
 	model: string;
+	/** Ordered fallback models: a failed seat is retried fresh on each in turn. */
+	fallbacks?: string[];
 }
 
 export interface PanelConfig {
@@ -133,7 +135,15 @@ export function loadConfig(settingsPath: string = join(homedir(), ".pi", "agent"
 							seatsValid = false;
 							break;
 						}
-						seats.push({ name: entry.name.trim(), model: entry.model.trim() });
+						let fallbacks: string[] | undefined;
+						if (entry.fallbacks !== undefined) {
+							if (Array.isArray(entry.fallbacks) && entry.fallbacks.every((f) => typeof f === "string" && f.trim())) {
+								fallbacks = (entry.fallbacks as string[]).map((f) => f.trim());
+							} else {
+								warnings.push(`panel.seats[${index}].fallbacks must be an array of model strings; ignoring it.`);
+							}
+						}
+						seats.push({ name: entry.name.trim(), model: entry.model.trim(), ...(fallbacks ? { fallbacks } : {}) });
 					}
 					if (seatsValid) config.seats = seats;
 				} else {
@@ -184,6 +194,9 @@ export function validateConfig(config: PanelConfig): string[] {
 		if (models.has(seat.model)) problems.push(`duplicate seat model "${seat.model}" (panel diversity requires distinct models).`);
 		names.add(seat.name);
 		models.add(seat.model);
+		for (const fb of seat.fallbacks ?? []) {
+			if (fb === seat.model) problems.push(`seat "${seat.name}" lists its own model as a fallback.`);
+		}
 	}
 	return problems;
 }

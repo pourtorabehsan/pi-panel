@@ -116,6 +116,10 @@ to settings.json (preserving all other keys). Example panel:
 | `sol` | `openai/gpt-5.6-sol` |
 | `glm` | `fireworks/accounts/fireworks/models/glm-5p2` |
 
+Each seat may configure ordered `fallbacks` (settings only): a failed seat
+run is retried fresh on each fallback model in turn (results merge by seat);
+only when fallbacks are exhausted is the seat marked failed.
+
 All seats receive the **identical** brief (§6). Fresh context
 (`context: "fresh"`). Read-only on the repo: reviewers never edit, stage, or
 commit. The fixer/implementer is **never a panel seat** — the panel only ever
