@@ -5,10 +5,16 @@ import { join } from "node:path";
 import test from "node:test";
 import { ConfigError, DEFAULT_CONFIG, loadConfig, validateConfig } from "../src/config.ts";
 
-test("defaults when settings file is missing", () => {
+export const TEST_SEATS = [
+	{ name: "kimi", model: "fireworks/accounts/fireworks/models/kimi-k3" },
+	{ name: "sol", model: "openai/gpt-5.6-sol" },
+	{ name: "glm", model: "fireworks/accounts/fireworks/models/glm-5p2" },
+];
+
+test("defaults when settings file is missing (no default seats by design)", () => {
 	const { config, warnings } = loadConfig(join(tmpdir(), "pi-panel-test-nonexistent", "settings.json"));
 	assert.deepEqual(config, DEFAULT_CONFIG);
-	assert.equal(config.seats.length, 3);
+	assert.equal(config.seats.length, 0); // unconfigured → /panel-setup
 	assert.deepEqual(warnings, []);
 });
 
@@ -25,8 +31,8 @@ test("user settings merge over defaults", () => {
 		assert.equal(config.maxLoopRounds, 4);
 		assert.equal(config.autoCommit, false);
 		assert.equal(config.artifactDir, ".panel-runs");
-		// seats untouched
-		assert.equal(config.seats[0].name, "kimi");
+		// seats untouched (still unconfigured)
+		assert.equal(config.seats.length, 0);
 	});
 });
 
@@ -72,8 +78,8 @@ test("invalid seat counts and duplicate models are config errors", () => {
 });
 
 test("fixer/implementer matching a seat model is warned and ignored", () => {
-	const seatModel = DEFAULT_CONFIG.seats[1].model;
-	withSettings({ panel: { fixer: seatModel, implementer: "other/model" } }, (path) => {
+	const seatModel = TEST_SEATS[1].model;
+	withSettings({ panel: { seats: TEST_SEATS, fixer: seatModel, implementer: "other/model" } }, (path) => {
 		const { config, warnings } = loadConfig(path);
 		assert.equal(config.fixer, null);
 		assert.equal(config.implementer, "other/model");

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { DEFAULT_CONFIG } from "../src/config.ts";
+import { TEST_SEATS } from "./config.test.ts";
 import { PanelRun } from "../src/orchestrator.ts";
 
 function makeRepo(): { repo: string; g: (args: string[]) => string } {
@@ -75,7 +76,7 @@ function makeFakeRpc(repo: string, g: (a: string[]) => string, scripted: Scripte
 function makeRun(repo: string, rpc: unknown, mode: "review" | "loop") {
 	return new PanelRun({
 		rpc: rpc as never,
-		config: { ...DEFAULT_CONFIG },
+		config: { ...DEFAULT_CONFIG, seats: TEST_SEATS.map((s) => ({ ...s })) },
 		configWarnings: [],
 		cwd: repo,
 		ui: { notify: () => {}, setStatus: () => {} },

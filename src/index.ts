@@ -8,6 +8,7 @@ import { ConfigError, loadConfig, type PanelConfig } from "./config.ts";
 import { GitError } from "./git.ts";
 import { PanelRun } from "./orchestrator.ts";
 import { ASYNC_COMPLETE_EVENT, asyncCompleteId, createRpcClient, RpcError } from "./rpc.ts";
+import { runPanelSetup } from "./setup.ts";
 import { probeScript } from "./workflows.ts";
 
 const MISSING_SUBAGENTS_MESSAGE =
@@ -56,6 +57,29 @@ export default function (pi: ExtensionAPI) {
 			return false;
 		}
 		return true;
+	}
+
+	/**
+	 * Seats guard: unconfigured panel routes to interactive setup (first-use
+	 * onboarding). Returns true when seats exist (possibly just configured).
+	 */
+	async function guardSeats(ctx: ExtensionCommandContext): Promise<boolean> {
+		const { config } = loadRunContext();
+		if (config.seats.length === 3) return true;
+		if (!ctx.hasUI || ctx.mode !== "tui") {
+			ctx.ui.notify("pi-panel is not configured: run /panel-setup (interactive) or set panel.seats in settings.json.", "error");
+			return false;
+		}
+		const yes = await ctx.ui.confirm(
+			"pi-panel setup",
+			"No panel configured yet. Pick 3 reviewer models now? (recommended: 3 different labs)",
+		);
+		if (!yes) {
+			ctx.ui.notify("Aborted. Run /panel-setup when ready, or set panel.seats in settings.json.", "info");
+			return false;
+		}
+		const seats = await runPanelSetup(ctx, ctx.modelRegistry);
+		return seats !== null;
 	}
 
 	async function guardRpc(ctx: ExtensionCommandContext): Promise<boolean> {
@@ -119,6 +143,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			captureCtx(ctx);
+			if (!(await guardSeats(ctx))) return;
 			if (!(await guardRpc(ctx))) return;
 
 			let run: PanelRun | undefined;
@@ -161,6 +186,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			captureCtx(ctx);
+			if (!(await guardSeats(ctx))) return;
 			if (!(await guardRpc(ctx))) return;
 
 			let run: PanelRun | undefined;
@@ -172,6 +198,23 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			ctx.ui.notify(`Panel loop started. Artifacts: ${run!.runDir}`, "info");
+		},
+	});
+
+	pi.registerCommand("panel-setup", {
+		description: "Configure the panel: pick 3 reviewer models from your available (authenticated) models. Re-runnable.",
+		handler: async (_args, ctx) => {
+			if (!ctx.hasUI || ctx.mode !== "tui") {
+				ctx.ui.notify("/panel-setup needs interactive mode. Alternatively set panel.seats in ~/.pi/agent/settings.json manually.", "error");
+				return;
+			}
+			const { config } = loadRunContext();
+			if (config.seats.length === 3) {
+				const current = config.seats.map((s, i) => `  seat ${i + 1}: ${s.name} → ${s.model}`).join("\n");
+				const change = await ctx.ui.confirm("Current panel", `Current configuration:\n${current}\n\nChange it?`);
+				if (!change) return;
+			}
+			await runPanelSetup(ctx, ctx.modelRegistry);
 		},
 	});
 

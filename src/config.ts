@@ -8,6 +8,7 @@ export interface SeatConfig {
 }
 
 export interface PanelConfig {
+	/** Empty when unconfigured — commands route to /panel-setup instead of running. */
 	seats: SeatConfig[];
 	implementer: string | null;
 	fixer: string | null;
@@ -34,11 +35,9 @@ export class ConfigError extends Error {
 }
 
 export const DEFAULT_CONFIG: PanelConfig = {
-	seats: [
-		{ name: "kimi", model: "fireworks/accounts/fireworks/models/kimi-k3" },
-		{ name: "sol", model: "openai/gpt-5.6-sol" },
-		{ name: "glm", model: "fireworks/accounts/fireworks/models/glm-5p2" },
-	],
+	// No default seats by design: model auth is per-user, and a hardcoded panel
+	// would fail or, worse, silently run on the wrong models. /panel-setup.
+	seats: [],
 	implementer: null,
 	fixer: null,
 	maxDeliberationRounds: 2,
@@ -109,7 +108,7 @@ export function loadConfig(settingsPath: string = join(homedir(), ".pi", "agent"
 	const raw = settings.panel;
 
 	const config: PanelConfig = {
-		seats: DEFAULT_CONFIG.seats.map((s) => ({ ...s })),
+		seats: [],
 		implementer: DEFAULT_CONFIG.implementer,
 		fixer: DEFAULT_CONFIG.fixer,
 		maxDeliberationRounds: DEFAULT_CONFIG.maxDeliberationRounds,
@@ -138,7 +137,7 @@ export function loadConfig(settingsPath: string = join(homedir(), ".pi", "agent"
 					}
 					if (seatsValid) config.seats = seats;
 				} else {
-					warnings.push(`panel.seats must be an array; using default seats.`);
+					warnings.push(`panel.seats must be an array; ignoring it.`);
 				}
 			}
 			config.implementer = asOptionalModel(raw.implementer, warnings, "implementer");
@@ -151,15 +150,18 @@ export function loadConfig(settingsPath: string = join(homedir(), ".pi", "agent"
 		}
 	}
 
-	const problems = validateConfig(config);
-	if (problems.length > 0) throw new ConfigError(problems);
+	// Empty seats = unconfigured, not invalid: commands route to /panel-setup.
+	if (config.seats.length > 0) {
+		const problems = validateConfig(config);
+		if (problems.length > 0) throw new ConfigError(problems);
 
-	// The fixer/implementer must never be a panel seat (spec §7): warn + ignore.
-	for (const role of ["implementer", "fixer"] as const) {
-		const model = config[role];
-		if (model && config.seats.some((s) => s.model === model)) {
-			warnings.push(`panel.${role} ("${model}") matches a panel seat model; ignoring it (the ${role} must never be a panel seat).`);
-			config[role] = null;
+		// The fixer/implementer must never be a panel seat (spec §7): warn + ignore.
+		for (const role of ["implementer", "fixer"] as const) {
+			const model = config[role];
+			if (model && config.seats.some((s) => s.model === model)) {
+				warnings.push(`panel.${role} ("${model}") matches a panel seat model; ignoring it (the ${role} must never be a panel seat).`);
+				config[role] = null;
+			}
 		}
 	}
 

@@ -100,7 +100,15 @@ machine cancelled, writes a `cancelled` note into the run's `final-report.md`.
 
 ### Seats
 
-Three fixed seats (configurable, see §7). Defaults:
+Three fixed seats, configured per user via `/panel-setup` or `panel.seats` in
+settings.json (see §7). **There are no default seats** — model auth is
+per-user, so a hardcoded panel would fail or silently run the wrong models.
+Unconfigured `/panel-review` / `/panel-loop` invocations route into
+interactive setup first (TUI) or fail with instructions (non-TUI).
+`/panel-setup` picks 3 models from `ctx.modelRegistry.getAvailable()`
+(provider → model selects), derives charset-safe seat names, warns when all
+three share one provider, confirms the final config, and writes `panel.seats`
+to settings.json (preserving all other keys). Example panel:
 
 | Seat | Model |
 |---|---|
@@ -670,22 +678,19 @@ class PanelRun {
 
 ### Config (`config.ts`)
 
-Read `~/.pi/agent/settings.json` key `panel`, merged over defaults:
+Read `~/.pi/agent/settings.json` key `panel`, merged over defaults. `seats`
+has NO default (empty = unconfigured → setup flow); the rest default as shown:
 
 ```json
 {
   "panel": {
-    "seats": [
-      { "name": "kimi", "model": "fireworks/accounts/fireworks/models/kimi-k3" },
-      { "name": "sol",  "model": "openai/gpt-5.6-sol" },
-      { "name": "glm",  "model": "fireworks/accounts/fireworks/models/glm-5p2" }
-    ],
+    "seats": [],
     "implementer": null,
     "fixer": null,
     "maxDeliberationRounds": 2,
     "maxLoopRounds": 2,
     "autoCommit": true,
-    "artifactDir": ".panel",
+    "artifactDir": "~/.panel",
     "maxDiffLines": 4000
   }
 }

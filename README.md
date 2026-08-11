@@ -10,6 +10,7 @@ Single-model review inherits that model's training-data biases. pi-panel's premi
 |---|---|
 | `/panel-review [target]` | Panel review of a diff. **Report only — never touches the worktree.** Target: nothing (uncommitted changes), a commit SHA, a branch name, or a PR number/URL. |
 | `/panel-loop [request]` | The full loop: optional implementation, then repeated panel → fix → re-panel cycles, **one git commit per round**, until the panel accepts nothing or the loop cap is hit. |
+| `/panel-setup` | Configure the panel: pick 3 reviewer models from your available (authenticated) models. Re-runnable. Also auto-offered the first time you run `/panel-review` or `/panel-loop` unconfigured. |
 | `/panel-cancel` | Stop the active run. |
 | `/panel-ping` | Diagnostics: ping the pi-subagents RPC and run a probe workflow. |
 
@@ -58,7 +59,7 @@ Or for local development, add to `~/.pi/agent/settings.json`:
 
 ## Configuration
 
-`~/.pi/agent/settings.json`, key `panel` (all optional; shown with defaults):
+`~/.pi/agent/settings.json`, key `panel`. **There are no default seats** — model auth is per-user, so the panel is configured via `/panel-setup` (interactive picker over your available models) or by setting `panel.seats` manually:
 
 ```json
 {
@@ -79,7 +80,7 @@ Or for local development, add to `~/.pi/agent/settings.json`:
 }
 ```
 
-- Exactly 3 seats, distinct names and models — panel diversity is the point. Pick models from **different labs**.
+(seats shown are an example, not a default.) Non-seat keys have the defaults above. Exactly 3 seats, distinct names and models — panel diversity is the point. Pick models from **different labs** (`/panel-setup` warns if all three share one provider).
 - `implementer` / `fixer`: `null` = session model. A value matching a seat model is ignored with a warning (the fixer must never be a panel seat).
 - `autoCommit: false` → fixer/implementer leave changes uncommitted; round boundaries become "current diff" instead of `git show <sha>`. Commits are strongly recommended — they define the rounds.
 - Diffs larger than `maxDiffLines` require confirmation (TUI) or are rejected (non-TUI).
