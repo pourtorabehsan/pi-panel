@@ -1,14 +1,16 @@
 /**
  * /panel-setup — interactive panel onboarding (TUI).
- * Picks 3 seats from the user's actually-available models (auth-configured),
- * confirms the final config, and writes panel.seats into settings.json.
+ * Tier 1 (required): pick 3 seats from the user's actually-available models.
+ * Tier 2 (one confirm away): advanced knobs — autoCommit, loop/deliberation
+ * caps, implementer/fixer models. artifactDir/maxDiffLines stay settings-only.
+ * Confirms the final config, then merges it into settings.json (panel key).
  * Pure helpers (seat naming, settings merge) are exported for tests.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import type { SeatConfig } from "./config.ts";
+import { DEFAULT_CONFIG, type PanelConfig, type SeatConfig } from "./config.ts";
 
 const SEAT_NAME_CHARSET = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -21,8 +23,11 @@ export function deriveSeatName(modelId: string, taken: ReadonlySet<string>): str
 	return name.slice(0, 128).match(SEAT_NAME_CHARSET) ? name.slice(0, 128) : "seat";
 }
 
-/** Merge seats into settings.json under panel.seats, preserving every other key. */
-export function writeSeatsToSettings(seats: SeatConfig[], settingsPath: string = join(homedir(), ".pi", "agent", "settings.json")): void {
+/** Merge partial panel config into settings.json, preserving every other key (panel and top-level). */
+export function writePanelConfig(
+	partial: Partial<PanelConfig>,
+	settingsPath: string = join(homedir(), ".pi", "agent", "settings.json"),
+): void {
 	let settings: Record<string, unknown> = {};
 	try {
 		const parsed: unknown = JSON.parse(readFileSync(settingsPath, "utf8"));
@@ -33,7 +38,9 @@ export function writeSeatsToSettings(seats: SeatConfig[], settingsPath: string =
 	const panel = (settings.panel && typeof settings.panel === "object" && !Array.isArray(settings.panel)
 		? { ...(settings.panel as Record<string, unknown>) }
 		: {});
-	panel.seats = seats;
+	for (const [key, value] of Object.entries(partial)) {
+		if (value !== undefined) panel[key] = value;
+	}
 	settings.panel = panel;
 	writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n", "utf8");
 }
@@ -49,9 +56,84 @@ interface ModelRegistryLike {
 	getProviderDisplayName(provider: string): string;
 }
 
+const SESSION_MODEL = "Session model (default)";
+
+/** Provider → model picker over auth-configured models. Returns "provider/id", null for session default, or undefined on abort. */
+async function pickModel(
+	ctx: ExtensionCommandContext,
+	registry: ModelRegistryLike,
+	title: string,
+	exclude: ReadonlySet<string>,
+	allowSessionDefault = false,
+): Promise<string | null | undefined> {
+	const models = registry.getAvailable().filter((m) => !exclude.has(`${m.provider}/${m.id}`));
+	const providers = [...new Set(models.map((m) => m.provider))];
+	const providerLabel = await ctx.ui.select(
+		`${title} — pick a provider`,
+		providers.map((p) => registry.getProviderDisplayName(p)),
+	);
+	if (providerLabel === undefined) return undefined;
+	const provider = providers[providers.findIndex((p) => registry.getProviderDisplayName(p) === providerLabel)];
+
+	const providerModels = models.filter((m) => m.provider === provider);
+	const options = providerModels.map((m) => `${m.id}${m.name && m.name !== m.id ? ` — ${m.name}` : ""}`);
+	if (allowSessionDefault) options.unshift(SESSION_MODEL);
+	const modelLabel = await ctx.ui.select(`${title} — pick a model (${providerLabel})`, options);
+	if (modelLabel === undefined) return undefined;
+	if (modelLabel === SESSION_MODEL) return null;
+	const model = providerModels.find((m) => modelLabel.startsWith(m.id));
+	return model ? `${model.provider}/${model.id}` : undefined;
+}
+
+async function pickPositiveInt(ctx: ExtensionCommandContext, title: string, current: number): Promise<number | undefined> {
+	const raw = await ctx.ui.input(title, String(current));
+	if (raw === undefined) return undefined;
+	const n = Number(raw.trim());
+	if (!Number.isInteger(n) || n < 1) {
+		ctx.ui.notify(`"${raw}" is not a positive integer — keeping ${current}.`, "warning");
+		return undefined;
+	}
+	return n;
+}
+
+/** Tier 2: advanced knobs loop. Mutates and returns the overrides object. */
+async function runAdvancedSetup(
+	ctx: ExtensionCommandContext,
+	registry: ModelRegistryLike,
+	overrides: Partial<PanelConfig>,
+	seatModels: ReadonlySet<string>,
+): Promise<void> {
+	for (;;) {
+		const current = { ...DEFAULT_CONFIG, ...overrides };
+		const choice = await ctx.ui.select("Advanced settings (Esc when done)", [
+			`autoCommit: ${current.autoCommit ? "on" : "off"} — commit each fix round`,
+			`maxLoopRounds: ${current.maxLoopRounds} — panel→fix cycles before stopping`,
+			`maxDeliberationRounds: ${current.maxDeliberationRounds} — vote rounds per contested finding`,
+			`implementer: ${current.implementer ?? "session model"}`,
+			`fixer: ${current.fixer ?? "session model"}`,
+			"Done",
+		]);
+		if (choice === undefined || choice === "Done") return;
+
+		if (choice.startsWith("autoCommit")) {
+			overrides.autoCommit = !current.autoCommit;
+		} else if (choice.startsWith("maxLoopRounds")) {
+			const n = await pickPositiveInt(ctx, "Max loop rounds", current.maxLoopRounds);
+			if (n !== undefined) overrides.maxLoopRounds = n;
+		} else if (choice.startsWith("maxDeliberationRounds")) {
+			const n = await pickPositiveInt(ctx, "Max deliberation rounds", current.maxDeliberationRounds);
+			if (n !== undefined) overrides.maxDeliberationRounds = n;
+		} else {
+			const role = choice.startsWith("implementer") ? "implementer" : "fixer";
+			const model = await pickModel(ctx, registry, `${role} model`, seatModels, true);
+			if (model !== undefined) overrides[role] = model; // null = session model
+		}
+	}
+}
+
 /**
- * Interactive seat picker. Returns the chosen seats, or null if aborted.
- * Throws on non-interactive contexts (caller checks ctx.hasUI / ctx.mode).
+ * Interactive setup. Returns the chosen seats, or null if aborted.
+ * Requires TUI (caller checks ctx.hasUI / ctx.mode).
  */
 export async function runPanelSetup(
 	ctx: ExtensionCommandContext,
@@ -64,29 +146,13 @@ export async function runPanelSetup(
 		return null;
 	}
 
-	const providers = [...new Set(models.map((m) => m.provider))];
+	// Tier 1: the three seats.
 	const seats: SeatConfig[] = [];
 	const takenNames = new Set<string>();
 	const takenModels = new Set<string>();
-
 	for (let seatIndex = 0; seatIndex < 3; seatIndex++) {
-		const providerLabel = await ctx.ui.select(
-			`Panel seat ${seatIndex + 1} of 3 — pick a provider`,
-			providers.map((p) => registry.getProviderDisplayName(p)),
-		);
-		if (providerLabel === undefined) return null; // aborted
-		const provider = providers[providers.findIndex((p) => registry.getProviderDisplayName(p) === providerLabel)];
-
-		const providerModels = models.filter((m) => m.provider === provider && !takenModels.has(`${m.provider}/${m.id}`));
-		const modelLabel = await ctx.ui.select(
-			`Panel seat ${seatIndex + 1} of 3 — pick a model (${providerLabel})`,
-			providerModels.map((m) => `${m.id}${m.name && m.name !== m.id ? ` — ${m.name}` : ""}`),
-		);
-		if (modelLabel === undefined) return null;
-		const model = providerModels.find((m) => modelLabel.startsWith(m.id));
-		if (!model) return null;
-
-		const modelId = `${model.provider}/${model.id}`;
+		const modelId = await pickModel(ctx, registry, `Panel seat ${seatIndex + 1} of 3`, takenModels);
+		if (modelId === undefined || modelId === null) return null; // aborted
 		takenModels.add(modelId);
 		const name = deriveSeatName(modelId, takenNames);
 		takenNames.add(name);
@@ -103,14 +169,27 @@ export async function runPanelSetup(
 		if (!proceed) return null;
 	}
 
-	const summary = seats.map((s, i) => `  seat ${i + 1}: ${s.name} → ${s.model}`).join("\n");
+	// Tier 2: optional advanced knobs.
+	const overrides: Partial<PanelConfig> = {};
+	const advanced = await ctx.ui.confirm(
+		"Advanced settings?",
+		"Defaults are sensible (autoCommit on, 2 loop rounds, 2 deliberation rounds, session model implements/fixes). Customize?",
+	);
+	if (advanced) await runAdvancedSetup(ctx, registry, overrides, takenModels);
+
+	const finalConfig = { ...DEFAULT_CONFIG, ...overrides, seats };
+	const summary = [
+		...seats.map((s, i) => `  seat ${i + 1}: ${s.name} → ${s.model}`),
+		`  autoCommit: ${finalConfig.autoCommit} · maxLoopRounds: ${finalConfig.maxLoopRounds} · maxDeliberationRounds: ${finalConfig.maxDeliberationRounds}`,
+		`  implementer: ${finalConfig.implementer ?? "session model"} · fixer: ${finalConfig.fixer ?? "session model"}`,
+	].join("\n");
 	const confirmed = await ctx.ui.confirm(
 		"Confirm panel",
-		`Panel configuration:\n${summary}\n\nWritten to settings.json under panel.seats. Re-run /panel-setup anytime to change.`,
+		`Panel configuration:\n${summary}\n\nWritten to settings.json under panel. Re-run /panel-setup anytime to change.`,
 	);
 	if (!confirmed) return null;
 
-	writeSeatsToSettings(seats, settingsPath);
+	writePanelConfig({ seats, ...overrides }, settingsPath);
 	ctx.ui.notify(`Panel saved:\n${summary}`, "info");
 	return seats;
 }
