@@ -103,6 +103,8 @@ export interface ResolvedTarget {
 	description: string;
 	diffText: string;
 	commands: string[];
+	/** Human-readable caveats (e.g. stale local base) — surfaced in target.md and as a notification. */
+	notes: string[];
 }
 
 const SHA_PATTERN = /^[0-9a-f]{7,40}$/i;
@@ -151,13 +153,13 @@ export function resolveTarget(args: string, cwd: string): ResolvedTarget {
 
 	if (!arg) {
 		const diff = git(["diff", "HEAD"], cwd);
-		return { description: "uncommitted changes in the working tree (git diff HEAD)", diffText: requireNonEmpty(diff, "git diff HEAD"), commands: ["git diff HEAD"] };
+		return { description: "uncommitted changes in the working tree (git diff HEAD)", diffText: requireNonEmpty(diff, "git diff HEAD"), commands: ["git diff HEAD"], notes: [] };
 	}
 
 	if (SHA_PATTERN.test(arg)) {
 		const diff = git(["show", arg], cwd);
 		const subject = commitMessage(cwd, arg);
-		return { description: `commit ${arg} (${subject})`, diffText: requireNonEmpty(diff, `git show ${arg}`), commands: [`git show ${arg}`] };
+		return { description: `commit ${arg} (${subject})`, diffText: requireNonEmpty(diff, `git show ${arg}`), commands: [`git show ${arg}`], notes: [] };
 	}
 
 	// branch name (spec §2 order: branch before PR): must resolve and not be HEAD's own branch
@@ -172,8 +174,31 @@ export function resolveTarget(args: string, cwd: string): ResolvedTarget {
 		if (branch && branch === arg) {
 			throw new GitError(`Review target "${arg}" is the current branch; use no arguments to review uncommitted changes, or a base branch to compare against.`);
 		}
-		const diff = git(["diff", `${arg}...HEAD`], cwd);
-		return { description: `changes on current branch vs ${arg} (git diff ${arg}...HEAD)`, diffText: requireNonEmpty(diff, `git diff ${arg}...HEAD`), commands: [`git diff ${arg}...HEAD`] };
+		// Stale-base guard: "review vs main" almost always means vs UPSTREAM main.
+		// If a remote-tracking ref exists and local is strictly behind it, diff
+		// against origin/<branch> instead — otherwise the panel reviews N upstream
+		// commits that are not the user's change.
+		let base = arg;
+		const notes: string[] = [];
+		try {
+			const remote = `origin/${arg}`;
+			const localSha = git(["rev-parse", `${arg}^{commit}`], cwd);
+			const remoteSha = git(["rev-parse", `${remote}^{commit}`], cwd);
+			if (localSha !== remoteSha && git(["merge-base", arg, remote], cwd) === localSha) {
+				const behind = git(["rev-list", "--count", `${arg}..${remote}`], cwd);
+				base = remote;
+				notes.push(`local ${arg} is ${behind} commit(s) behind ${remote}; diffed against ${remote} instead. Run \`git fetch\` / fast-forward ${arg} to refresh.`);
+			}
+		} catch {
+			// no remote-tracking ref (or not a branch) — use the local ref as-is
+		}
+		const diff = git(["diff", `${base}...HEAD`], cwd);
+		return {
+			description: `changes on current branch vs ${base} (git diff ${base}...HEAD)`,
+			diffText: requireNonEmpty(diff, `git diff ${base}...HEAD`),
+			commands: [`git diff ${base}...HEAD`],
+			notes,
+		};
 	}
 
 	if (isPrTarget(arg)) {
@@ -186,7 +211,7 @@ export function resolveTarget(args: string, cwd: string): ResolvedTarget {
 			// keep raw label
 		}
 		const diff = gh(["pr", "diff", arg], cwd);
-		return { description: label, diffText: requireNonEmpty(diff, `gh pr diff ${arg}`), commands: [`gh pr view ${arg}`, `gh pr diff ${arg}`] };
+		return { description: label, diffText: requireNonEmpty(diff, `gh pr diff ${arg}`), commands: [`gh pr view ${arg}`, `gh pr diff ${arg}`], notes: [] };
 	}
 
 	throw new UnknownTargetError(`Unknown review target "${arg}": not a commit SHA, branch, or PR reference.`);

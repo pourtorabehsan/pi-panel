@@ -100,3 +100,35 @@ test("isPanelCommit: trailer style, legacy prefix, and plain commits", () => {
 	g(["commit", "-m", "unrelated human commit"]);
 	assert.equal(isPanelCommit(dir, "HEAD"), false);
 });
+
+test("resolveTarget: stale local base diffs against origin/<branch> with a note", () => {
+	// bare "origin" + clone-ish repo where local main is behind origin/main
+	const remote = mkdtempSync(join(tmpdir(), "pi-panel-remote-"));
+	execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
+	const dir = initRepo();
+	const g = (args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+	g(["remote", "add", "origin", remote]);
+	g(["push", "-q", "-u", "origin", "main"]);
+	// upstream advances by 2 commits (via a second clone)
+	const upstream = mkdtempSync(join(tmpdir(), "pi-panel-upstream-"));
+	execFileSync("git", ["clone", "-q", remote, upstream]);
+	const ug = (args: string[]) => execFileSync("git", args, { cwd: upstream, encoding: "utf8" });
+	ug(["config", "user.email", "t@t"]); ug(["config", "user.name", "t"]);
+	writeFileSync(join(upstream, "up1.txt"), "upstream 1\n");
+	ug(["add", "."]); ug(["commit", "-q", "-m", "upstream 1"]);
+	writeFileSync(join(upstream, "up2.txt"), "upstream 2\n");
+	ug(["add", "."]); ug(["commit", "-q", "-m", "upstream 2"]);
+	ug(["push", "-q"]);
+	g(["fetch", "-q", "origin"]); // now local main is 2 behind origin/main
+	// local feature commit on top of STALE main
+	g(["checkout", "-q", "-b", "feature"]);
+	writeFileSync(join(dir, "feature.txt"), "mine\n");
+	g(["add", "."]); g(["commit", "-q", "-m", "my feature"]);
+
+	const target = resolveTarget("main", dir);
+	assert.match(target.description, /vs origin\/main/);
+	assert.match(target.diffText, /\+mine/);
+	assert.ok(!target.diffText.includes("+upstream 1")); // upstream work excluded
+	assert.equal(target.notes.length, 1);
+	assert.match(target.notes[0], /2 commit\(s\) behind/);
+});

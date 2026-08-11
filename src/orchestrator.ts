@@ -148,7 +148,8 @@ export class PanelRun {
 	async startReview(target: ResolvedTarget): Promise<void> {
 		await this.checkDiffSize(target.diffText);
 		this.targetDescription = target.description;
-		writeText(this.runDir, "target.md", `# Review target\n\n${target.description}\n\nCommands:\n${target.commands.map((c) => `- \`${c}\``).join("\n")}`);
+		writeText(this.runDir, "target.md", `# Review target\n\n${target.description}\n\nCommands:\n${target.commands.map((c) => `- \`${c}\``).join("\n")}${target.notes.length ? `\n\nNotes:\n${target.notes.map((n) => `- ${n}`).join("\n")}` : ""}`);
+		for (const note of target.notes) this.deps.ui.notify(note, "warning");
 		this.startRound(1, target.diffText, target.description, null);
 		await this.spawnReview();
 	}
@@ -163,7 +164,8 @@ export class PanelRun {
 			if (target) {
 				this.targetDescription = target.description;
 				await this.checkDiffSize(target.diffText);
-				writeText(this.runDir, "target.md", `# Review target\n\n${target.description}\n\nCommands:\n${target.commands.map((c) => `- \`${c}\``).join("\n")}`);
+				writeText(this.runDir, "target.md", `# Review target\n\n${target.description}\n\nCommands:\n${target.commands.map((c) => `- \`${c}\``).join("\n")}${target.notes.length ? `\n\nNotes:\n${target.notes.map((n) => `- ${n}`).join("\n")}` : ""}`);
+		for (const note of target.notes) this.deps.ui.notify(note, "warning");
 				this.startRound(1, target.diffText, target.description, null);
 				await this.spawnReview();
 				return;
