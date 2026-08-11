@@ -9,5 +9,5 @@
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
   },
-  "pi": { "extensions": ["./src/index.ts"] }
+  "pi": { "extensions": ["./index.ts"] }
 }
