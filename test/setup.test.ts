@@ -3,7 +3,10 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { deriveSeatName, runPanelSetup, writePanelConfig } from "../src/setup.ts";
+import { DEFAULT_CONFIG } from "../src/config.ts";
+import { deriveSeatName, runPanelEditor, runPanelSetup, writePanelConfig } from "../src/setup.ts";
+
+const DEFAULT_CONFIG_SAFE = DEFAULT_CONFIG;
 
 test("deriveSeatName: last path segment, charset-safe, deduped", () => {
 	const taken = new Set<string>();
@@ -71,11 +74,12 @@ test("runPanelSetup: prefix-colliding model ids resolve exactly (gpt-5.6-sol, no
 		getProviderDisplayName: (p: string) => p,
 	};
 	const selects = [
-		"fireworks", "kimi-k3",
-		"zai", "glm-5p2",
-		"openai", "gpt-5.6-sol — GPT-5.6 Sol",
+		"seat 1: (not set)", "fireworks", "kimi-k3",
+		"seat 2: (not set)", "zai", "glm-5p2",
+		"seat 3: (not set)", "openai", "gpt-5.6-sol — GPT-5.6 Sol",
+		"Done — save",
 	];
-	const confirms = [false, true]; // no advanced, confirm final
+	const confirms = [true]; // final confirm (diversity not triggered: 3 providers)
 	const ctx = {
 		ui: {
 			select: async () => selects.shift(),
@@ -89,4 +93,51 @@ test("runPanelSetup: prefix-colliding model ids resolve exactly (gpt-5.6-sol, no
 	assert.equal(seats![2].model, "openai/gpt-5.6-sol"); // NOT openai/gpt-5
 	const written = JSON.parse(readFileSync(path, "utf8"));
 	assert.equal(written.panel.seats[2].model, "openai/gpt-5.6-sol");
+});
+
+test("menuRows: flat list with live values and unset seats", async () => {
+	const { menuRows } = await import("../src/setup.ts");
+	const rows = menuRows({ ...DEFAULT_CONFIG_SAFE, seats: [{ name: "kimi-k3", model: "f/kimi-k3" }] });
+	assert.equal(rows[0], "seat 1: kimi-k3 → f/kimi-k3");
+	assert.equal(rows[1], "seat 2: (not set)");
+	assert.equal(rows[rows.length - 1], "Done — save");
+	assert.ok(rows.some((r) => r.startsWith("autoCommit:")));
+});
+
+test("runPanelEditor: editing only seat 3 keeps seats 1-2 and other settings", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-panel-setup-"));
+	const path = join(dir, "settings.json");
+	writeFileSync(path, JSON.stringify({ panel: { maxLoopRounds: 4 } }));
+	const current = {
+		...DEFAULT_CONFIG_SAFE,
+		maxLoopRounds: 4, // as loadConfig would have merged from settings
+		seats: [
+			{ name: "kimi-k3", model: "fireworks/kimi-k3" },
+			{ name: "glm-5p2", model: "zai/glm-5p2" },
+			{ name: "gpt-5", model: "openai/gpt-5" },
+		],
+	};
+	const registry = {
+		getAvailable: () => [
+			{ provider: "openai", id: "gpt-5" },
+			{ provider: "openai", id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
+		],
+		getProviderDisplayName: (p: string) => p,
+	};
+	const selects = ["seat 3: gpt-5 → openai/gpt-5", "openai", "gpt-5.6-sol — GPT-5.6 Sol", "Done — save"];
+	const ctx = {
+		ui: {
+			select: async () => selects.shift(),
+			confirm: async () => true,
+			input: async () => undefined,
+			notify: () => {},
+		},
+	};
+	const seats = await runPanelEditor(ctx as never, registry, current as never, path);
+	assert.ok(seats);
+	assert.deepEqual(seats!.map((s) => s.model), ["fireworks/kimi-k3", "zai/glm-5p2", "openai/gpt-5.6-sol"]);
+	assert.equal(seats![2].name, "gpt-5.6-sol"); // re-derived from new model
+	const written = JSON.parse(readFileSync(path, "utf8"));
+	assert.equal(written.panel.maxLoopRounds, 4); // untouched setting preserved
+	assert.equal(written.panel.seats[1].model, "zai/glm-5p2");
 });

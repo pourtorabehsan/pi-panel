@@ -10,7 +10,7 @@ Single-model review inherits that model's training-data biases. pi-panel's premi
 |---|---|
 | `/panel-review [target]` | Panel review of a diff. **Report only — never touches the worktree.** Target: nothing (uncommitted changes), a commit SHA, a branch name, or a PR number/URL. |
 | `/panel-loop [request]` | The full loop: optional implementation, then repeated panel → fix → re-panel cycles, **one git commit per round**, until the panel accepts nothing or the loop cap is hit. |
-| `/panel-setup` | Configure the panel: pick 3 reviewer models from your available (authenticated) models, then optionally advanced knobs (autoCommit, loop/deliberation caps, implementer/fixer models). Re-runnable. Also auto-offered the first time you run `/panel-review` or `/panel-loop` unconfigured. |
+| `/panel-setup` | Flat settings editor: one menu lists every row (3 seats, autoCommit, loop/deliberation caps, implementer/fixer) with live values — Enter edits just that row (model rows open a provider→model picker over your authenticated models), Esc cancels, Done saves. Auto-offered the first time you run `/panel-review` or `/panel-loop` unconfigured. |
 | `/panel-cancel` | Stop the active run. |
 | `/panel-ping` | Diagnostics: ping the pi-subagents RPC and run a probe workflow. |
 

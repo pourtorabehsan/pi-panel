@@ -8,7 +8,7 @@ import { ConfigError, loadConfig, type PanelConfig } from "./config.ts";
 import { GitError } from "./git.ts";
 import { PanelRun } from "./orchestrator.ts";
 import { ASYNC_COMPLETE_EVENT, asyncCompleteId, createRpcClient, RpcError } from "./rpc.ts";
-import { runAdvancedSetupOnly, runPanelSetup } from "./setup.ts";
+import { runPanelEditor, runPanelSetup } from "./setup.ts";
 import { probeScript } from "./workflows.ts";
 
 const MISSING_SUBAGENTS_MESSAGE =
@@ -209,21 +209,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			const { config } = loadRunContext();
-			if (config.seats.length === 3) {
-				const current = config.seats.map((s, i) => `  seat ${i + 1}: ${s.name} → ${s.model}`).join("\n");
-				const change = await ctx.ui.confirm("Current panel", `Current configuration:\n${current}\n\nChange it?`);
-				if (!change) return;
-				const what = await ctx.ui.select("What do you want to change?", [
-					"Advanced settings (keep current seats)",
-					"Re-pick all 3 seats",
-				]);
-				if (what === undefined) return;
-				if (what.startsWith("Advanced")) {
-					await runAdvancedSetupOnly(ctx, ctx.modelRegistry, config);
-					return;
-				}
-			}
-			await runPanelSetup(ctx, ctx.modelRegistry);
+			await runPanelEditor(ctx, ctx.modelRegistry, config);
 		},
 	});
 
