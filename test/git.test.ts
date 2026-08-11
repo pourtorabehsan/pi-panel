@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { GitError, currentHead, isDirty, repoSlug, resolveTarget, tryResolveTarget } from "../src/git.ts";
+import { GitError, currentHead, isDirty, isPanelCommit, repoSlug, resolveTarget, tryResolveTarget } from "../src/git.ts";
 
 function initRepo(): string {
 	const dir = mkdtempSync(join(tmpdir(), "pi-panel-git-"));
@@ -82,4 +82,21 @@ test("repoSlug: readable basename + hash, stable per path", () => {
 	const slug = repoSlug(dir);
 	assert.match(slug, /^pi-panel-git-[A-Za-z0-9]+-[a-z0-9]+$/);
 	assert.equal(slug, repoSlug(dir)); // stable
+});
+
+test("isPanelCommit: trailer style, legacy prefix, and plain commits", () => {
+	const dir = initRepo();
+	const g = (args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+	writeFileSync(join(dir, "c.txt"), "1\n");
+	g(["add", "c.txt"]);
+	g(["commit", "-m", "feat: human subject", "-m", "Panel-Loop: round 1"]);
+	assert.equal(isPanelCommit(dir, "HEAD"), true);
+	writeFileSync(join(dir, "c.txt"), "2\n");
+	g(["add", "c.txt"]);
+	g(["commit", "-m", "panel-loop: round 2 fixes (legacy)"]);
+	assert.equal(isPanelCommit(dir, "HEAD"), true);
+	writeFileSync(join(dir, "c.txt"), "3\n");
+	g(["add", "c.txt"]);
+	g(["commit", "-m", "unrelated human commit"]);
+	assert.equal(isPanelCommit(dir, "HEAD"), false);
 });

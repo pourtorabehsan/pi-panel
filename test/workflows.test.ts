@@ -90,7 +90,8 @@ test("deliberationTask includes contested clusters, disputes, and prior votes", 
 
 test("fixer/implementer tasks respect autoCommit", () => {
 	const fix = fixerTask("[]", 1, 2, true);
-	assert.match(fix, /panel-loop: round 1 fixes \(2 accepted findings\)/);
+	assert.match(fix, /Panel-Loop: round 1/); // trailer, not subject prefix
+	assert.match(fix, /Do NOT mention/); // human-style subject rule
 	assert.match(fix, /Never `git add -A`/);
 	const noCommit = fixerTask("[]", 1, 2, false);
 	assert.match(noCommit, /Do NOT commit/);
@@ -98,5 +99,5 @@ test("fixer/implementer tasks respect autoCommit", () => {
 
 	const impl = implementerTask("add retry logic", true);
 	assert.match(impl, /add retry logic/);
-	assert.match(impl, /panel-loop: round 0 implementation/);
+	assert.match(impl, /Panel-Loop: round 0/);
 });

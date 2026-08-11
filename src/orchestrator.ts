@@ -45,7 +45,7 @@ import {
 	type SeatVerdict,
 	type SeatVote,
 } from "./findings.ts";
-import { commitMessage, currentHead, git, GitError, isDirty, repoSlug, resolveTarget, tryResolveTarget, worktreeFingerprint, type ResolvedTarget } from "./git.ts";
+import { commitMessage, currentHead, git, GitError, isDirty, isPanelCommit, repoSlug, resolveTarget, tryResolveTarget, worktreeFingerprint, type ResolvedTarget } from "./git.ts";
 import type { RpcClient } from "./rpc.ts";
 import { deliberationScript, reviewRoundScript, workerScript } from "./workflows.ts";
 
@@ -581,9 +581,8 @@ export class PanelRun {
 			if (head === this.headBeforeWorker) {
 				throw new Error(`Fixer in round ${round.n} produced no commit (HEAD unchanged).\nFixer output:\n${result.output.slice(0, 1000)}`);
 			}
-			const message = commitMessage(this.deps.cwd, head);
-			if (!message.startsWith("panel-loop:")) {
-				throw new Error(`Fixer in round ${round.n} committed with an unexpected message: "${message}". Refusing to continue (panel commits must be labeled).`);
+			if (!isPanelCommit(this.deps.cwd, head)) {
+				throw new Error(`Fixer in round ${round.n} committed without the panel trailer: "${commitMessage(this.deps.cwd, head)}". Refusing to continue (panel commits must carry a "Panel-Loop: round N" trailer).`);
 			}
 			fixSha = head;
 			this.fixCommitByRound.set(round.n, head);
@@ -629,9 +628,8 @@ export class PanelRun {
 			if (head === this.headBeforeWorker) {
 				throw new Error(`Implementer produced no commit (HEAD unchanged). If the request was already implemented and committed, run /panel-review <sha> or /panel-review <base-branch> instead of /panel-loop with a request.\nImplementer output:\n${result.output.slice(0, 1000)}`);
 			}
-			const message = commitMessage(this.deps.cwd, head);
-			if (!message.startsWith("panel-loop:")) {
-				throw new Error(`Implementer committed with an unexpected message: "${message}". Refusing to continue (panel commits must be labeled).`);
+			if (!isPanelCommit(this.deps.cwd, head)) {
+				throw new Error(`Implementer committed without the panel trailer: "${commitMessage(this.deps.cwd, head)}". Refusing to continue (panel commits must carry a "Panel-Loop: round N" trailer).`);
 			}
 			diffText = git(["show", head], this.deps.cwd);
 			description = `${this.targetDescription} — commit ${head.slice(0, 8)}`;

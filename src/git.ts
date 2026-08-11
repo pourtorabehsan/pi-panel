@@ -85,6 +85,20 @@ export function commitMessage(cwd: string, sha: string): string {
 	return git(["log", "-1", "--format=%s", sha], cwd);
 }
 
+export function commitBody(cwd: string, sha: string): string {
+	return git(["log", "-1", "--format=%B", sha], cwd);
+}
+
+/**
+ * Panel-produced commits are verified by the `Panel-Loop: round N` trailer in
+ * the body (subjects stay human-conventional). The legacy `panel-loop: ...`
+ * subject prefix is accepted for runs created before the trailer convention.
+ */
+export function isPanelCommit(cwd: string, sha: string): boolean {
+	if (commitMessage(cwd, sha).startsWith("panel-loop:")) return true;
+	return /^Panel-Loop: round \d+\s*$/m.test(commitBody(cwd, sha));
+}
+
 export interface ResolvedTarget {
 	description: string;
 	diffText: string;

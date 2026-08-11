@@ -175,9 +175,15 @@ verify claims directly against the repository.
 `;
 }
 
-const COMMIT_RULES = (message: string) => `- When done, commit ONLY the files you modified:
-  \`git add <specific paths>\` then
-  \`git commit -m "${message}"\`.
+const COMMIT_RULES = (round: string) => `- When done, commit ONLY the files you modified:
+  \`git add <specific paths>\` then commit with a message that follows repo
+  conventions:
+  - Subject: a normal, descriptive summary of the change. Do NOT mention
+    panel, panel-loop, review rounds, findings counts, or AI tooling — the
+    commit should read like any human-written commit in this repo.
+  - Body: include exactly this trailer line (last paragraph):
+    \`Panel-Loop: ${round}\`
+  Example: \`git commit -m "vtbackups: scope storage layout" -m "Panel-Loop: ${round}"\`
   Never \`git add -A\` / \`git add .\`. Never stage panel/subagent artifact files or
   any file you did not modify.`;
 
@@ -197,7 +203,7 @@ ${NO_INTERCOM}
 - Follow existing code conventions.
 - Run the focused validation for the area you changed (build/test/lint — the
   narrowest meaningful commands). Report exact commands and exit codes.
-${autoCommit ? COMMIT_RULES(`panel-loop: round ${n} fixes (${k} accepted findings)`) : NO_COMMIT_RULES}
+${autoCommit ? COMMIT_RULES(`round ${n}`) : NO_COMMIT_RULES}
 - Return: changed files, validation commands + exit codes${autoCommit ? ", commit sha" : ""},
   anything you could not fix and why.`;
 }
@@ -217,6 +223,6 @@ ${NO_INTERCOM}
 - Keep the change scoped to the request. Follow existing conventions.
 - Run the narrowest meaningful validation (build/test/lint). Report exact
   commands and exit codes.
-${autoCommit ? `${COMMIT_RULES("panel-loop: round 0 implementation")}\n  The tree was clean when you started; keep it that way except for your commit.` : NO_COMMIT_RULES}
+${autoCommit ? `${COMMIT_RULES("round 0")}\n  The tree was clean when you started; keep it that way except for your commit.` : NO_COMMIT_RULES}
 - Return: changed files, validation commands + exit codes${autoCommit ? ", commit sha" : ""}.`;
 }

@@ -107,7 +107,8 @@ test("happy path: accept 2-seat finding, reject lone finding in deliberation, fi
 		onFix: () => {
 			writeFileSync(join(repo, "a.ts"), "export const x = 1;\nexport const y = x + 1; // fixed\n");
 			g(["add", "a.ts"]);
-			g(["commit", "-m", "panel-loop: round 1 fixes (1 accepted findings)"]);
+			// new convention: human-style subject, panel trailer in the body
+			g(["commit", "-m", "fix y derivation", "-m", "Panel-Loop: round 1"]);
 			// round-2 review: everything resolved
 			scripted.reviewValue = [
 				{ seat: "kimi", ok: true, runId: "k3", structured: { verdicts: [{ clusterId: "c1", verdict: "resolved", evidence: "checked" }], newFindings: [] }, output: "", error: null },
@@ -127,7 +128,7 @@ test("happy path: accept 2-seat finding, reject lone finding in deliberation, fi
 	// deliberation round files carry the deliberation-round suffix
 	assert.ok(existsSync(join(run.runDir, "round-1", "rebuttal-sol-d1.md")));
 	const fixCommit = readFileSync(join(run.runDir, "round-2", "fix-commit.txt"), "utf8");
-	assert.match(fixCommit, /panel-loop: round 1 fixes/);
+	assert.match(fixCommit, /fix y derivation/);
 	assert.match(readFileSync(join(run.runDir, "round-2", "consensus.md"), "utf8"), /Verified resolved \(1\)/);
 	const report = readFileSync(join(run.runDir, "final-report.md"), "utf8");
 	assert.match(report, /all accepted findings verified resolved/);
