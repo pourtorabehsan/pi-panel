@@ -193,3 +193,35 @@ test("read-only guard: a seat mutating the worktree during review fails the run"
 	assert.equal(run.phase, "failed");
 	assert.match(readFileSync(join(run.runDir, "error.txt"), "utf8"), /read-only review phase/);
 });
+
+test("loop entry: a git-target argument loops on committed work (no implementer)", async () => {
+	const { repo, g } = makeRepo();
+	g(["add", "a.ts"]);
+	g(["commit", "-m", "committed work to review"]);
+	const sha = g(["rev-parse", "HEAD"]).trim();
+	const scripted: ScriptedRpc = {
+		descriptions: [],
+		reviewValue: [
+			{ seat: "kimi", ok: true, runId: "k1", structured: { findings: [] }, output: "", error: null },
+			{ seat: "sol", ok: true, runId: "s1", structured: { findings: [] }, output: "", error: null },
+			{ seat: "glm", ok: true, runId: "g1", structured: { findings: [] }, output: "", error: null },
+		],
+	};
+	const run = makeRun(repo, makeFakeRpc(repo, g, scripted), "loop");
+	await run.startLoop(sha); // a commit SHA, not an implement request
+	await pump(run);
+
+	assert.equal(run.phase, "done");
+	assert.equal(scripted.descriptions.length, 1); // exactly one review phase, no implementer
+	assert.ok(scripted.descriptions[0].includes("reviewing"));
+	assert.match(readFileSync(join(run.runDir, "target.md"), "utf8"), new RegExp(`commit ${sha.slice(0, 7)}`));
+	assert.match(readFileSync(join(run.runDir, "final-report.md"), "utf8"), /panel accepted no findings/);
+});
+
+test("loop entry: clean tree + no args errors with a helpful hint", async () => {
+	const { repo, g } = makeRepo();
+	g(["add", "a.ts"]);
+	g(["commit", "-m", "clean tree"]);
+	const run = makeRun(repo, makeFakeRpc(repo, g, { descriptions: [] }), "loop");
+	await assert.rejects(() => run.startLoop(""), /panel-loop main/);
+});

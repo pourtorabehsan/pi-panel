@@ -24,6 +24,20 @@ export function git(args: string[], cwd: string): string {
 	}
 }
 
+/** Stable per-repo slug for artifact dirs: readable basename + collision-safe path hash. */
+export function repoSlug(cwd: string): string {
+	let top = cwd;
+	try {
+		top = git(["rev-parse", "--show-toplevel"], cwd);
+	} catch {
+		// not a repo or git unavailable — fall back to cwd
+	}
+	const base = top.replace(/\/+$/, "").split("/").pop() || "repo";
+	let h = 0;
+	for (const ch of top) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+	return `${base.replace(/[^A-Za-z0-9._-]/g, "-")}-${h.toString(36)}`;
+}
+
 export function assertGitRepo(cwd: string): void {
 	try {
 		git(["rev-parse", "--git-dir"], cwd);
@@ -98,6 +112,24 @@ function gh(args: string[], cwd: string): string {
 	}
 }
 
+/** Thrown when the arg is not a resolvable git target at all (vs. a resolvable target with an empty diff). */
+export class UnknownTargetError extends GitError {
+	constructor(message: string) {
+		super(message);
+		this.name = "UnknownTargetError";
+	}
+}
+
+/** Like resolveTarget, but returns null for unrecognized args (used by /panel-loop to distinguish targets from implement requests). */
+export function tryResolveTarget(args: string, cwd: string): ResolvedTarget | null {
+	try {
+		return resolveTarget(args, cwd);
+	} catch (error) {
+		if (error instanceof UnknownTargetError) return null;
+		throw error;
+	}
+}
+
 /** Resolve a /panel-review target per spec §2. Throws GitError on failure. */
 export function resolveTarget(args: string, cwd: string): ResolvedTarget {
 	const arg = args.trim();
@@ -143,5 +175,5 @@ export function resolveTarget(args: string, cwd: string): ResolvedTarget {
 		return { description: label, diffText: requireNonEmpty(diff, `gh pr diff ${arg}`), commands: [`gh pr view ${arg}`, `gh pr diff ${arg}`] };
 	}
 
-	throw new GitError(`Unknown review target "${arg}": not a commit SHA, branch, or PR reference.`);
+	throw new UnknownTargetError(`Unknown review target "${arg}": not a commit SHA, branch, or PR reference.`);
 }

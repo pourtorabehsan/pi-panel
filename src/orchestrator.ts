@@ -11,6 +11,7 @@ import {
 	makeRunId,
 	renderConsensus,
 	renderFinalReport,
+	resolveArtifactRoot,
 	writeJson,
 	writeText,
 	type ClusterReportEntry,
@@ -44,7 +45,7 @@ import {
 	type SeatVerdict,
 	type SeatVote,
 } from "./findings.ts";
-import { commitMessage, currentHead, git, GitError, isDirty, resolveTarget, worktreeFingerprint, type ResolvedTarget } from "./git.ts";
+import { commitMessage, currentHead, git, GitError, isDirty, repoSlug, resolveTarget, tryResolveTarget, worktreeFingerprint, type ResolvedTarget } from "./git.ts";
 import type { RpcClient } from "./rpc.ts";
 import { deliberationScript, reviewRoundScript, workerScript } from "./workflows.ts";
 
@@ -112,7 +113,14 @@ export class PanelRun {
 	constructor(deps: OrchestratorDeps, mode: "review" | "loop") {
 		this.deps = deps;
 		this.mode = mode;
-		this.runDir = createRunDir(join(deps.cwd, deps.config.artifactDir), this.id);
+		this.runDir = createRunDir(resolveArtifactRoot(deps.config.artifactDir, deps.cwd, repoSlug(deps.cwd)), this.id);
+	}
+
+	/** Tooling dirs excluded from dirty checks / fingerprints (only repo-relative ones can be excluded via pathspec). */
+	private toolingExclusions(): string[] {
+		const expanded = this.deps.config.artifactDir.replace(/^~\//, "");
+		const isRelative = !this.deps.config.artifactDir.startsWith("/") && !this.deps.config.artifactDir.startsWith("~/");
+		return [".pi-subagents", ...(isRelative ? [expanded] : [])];
 	}
 
 	get config(): PanelConfig {
@@ -135,17 +143,31 @@ export class PanelRun {
 	}
 
 	async startLoop(request: string): Promise<void> {
-		const dirty = isDirty(this.deps.cwd, [this.deps.config.artifactDir, ".pi-subagents"]);
-		if (request.trim()) {
+		const dirty = isDirty(this.deps.cwd, this.toolingExclusions());
+		const arg = request.trim();
+		if (arg) {
+			// A resolvable git target (branch / sha / PR) means "loop on already-
+			// committed work"; anything else is an implementation request.
+			const target = tryResolveTarget(arg, this.deps.cwd);
+			if (target) {
+				this.targetDescription = target.description;
+				await this.checkDiffSize(target.diffText);
+				writeText(this.runDir, "target.md", `# Review target\n\n${target.description}\n\nCommands:\n${target.commands.map((c) => `- \`${c}\``).join("\n")}`);
+				this.startRound(1, target.diffText, target.description, null);
+				await this.spawnReview();
+				return;
+			}
 			if (dirty) throw new GitError("Working tree has uncommitted changes; commit or stash them first — the implementer must never commit pre-existing user changes.");
-			this.targetDescription = `implementation of: ${request.trim()}`;
-			writeText(this.runDir, "target.md", `# Implementation request\n\n${request.trim()}`);
-			await this.spawnImplementer(request.trim());
+			this.targetDescription = `implementation of: ${arg}`;
+			writeText(this.runDir, "target.md", `# Implementation request\n\n${arg}`);
+			await this.spawnImplementer(arg);
 			return;
 		}
-		if (!dirty) throw new GitError("Nothing to review: clean tree and no implementation request.");
+		if (!dirty) {
+			throw new GitError("Nothing to review: clean tree and no argument. Pass a branch, commit, or PR to loop on committed work (e.g. /panel-loop main), or a request to implement first.");
+		}
 		const diff = git(["diff", "HEAD"], this.deps.cwd);
-		if (!diff.trim()) throw new GitError("Nothing to review: clean tree and no implementation request.");
+		if (!diff.trim()) throw new GitError("Nothing to review: working tree has no tracked modifications.");
 		await this.checkDiffSize(diff);
 		this.targetDescription = "uncommitted changes in the working tree (git diff HEAD)";
 		writeText(this.runDir, "target.md", `# Review target\n\n${this.targetDescription}`);
@@ -199,7 +221,7 @@ export class PanelRun {
 
 	private safeFingerprint(): string | null {
 		try {
-			return worktreeFingerprint(this.deps.cwd, [this.deps.config.artifactDir, ".pi-subagents"]);
+			return worktreeFingerprint(this.deps.cwd, this.toolingExclusions());
 		} catch {
 			return null;
 		}

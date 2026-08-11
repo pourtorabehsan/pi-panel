@@ -69,16 +69,17 @@ Errors: not a git repo; empty diff; `gh` missing/failing for PR targets; diff
 longer than `maxDiffLines` → `ctx.ui.confirm` prompt to proceed (non-TUI modes:
 hard error).
 
-### `/panel-loop [implementation request]`
+### `/panel-loop [target-or-request]`
 
 Entry modes (deterministic, never ask):
 
 | Invocation | Tree state | Behavior |
 |---|---|---|
-| non-empty args | clean | Round 0: implementer worker implements the request, validates, commits. Then panel loop. |
-| non-empty args | dirty | Error: "commit or stash your changes first" (the implementer must never commit pre-existing user changes). |
+| args resolve to a git target (branch / SHA / PR) | any | Loop on already-committed work: panel round 1 on the target diff, then fix rounds commit on top of the current branch. |
+| args not a git target (implement request) | clean | Round 0: implementer worker implements the request, validates, commits. Then panel loop. |
+| args not a git target (implement request) | dirty | Error: "commit or stash your changes first" (the implementer must never commit pre-existing user changes). |
 | empty args | dirty (diff vs HEAD non-empty) | Start with panel round 1 on the current diff. |
-| empty args | clean | Error: "nothing to review". |
+| empty args | clean | Error: "nothing to review", suggesting a branch/SHA argument. |
 
 ### `/panel-cancel`
 
@@ -344,7 +345,8 @@ filesystem; reviewers are read-only; the fixer never writes under the artifact
 dir.
 
 ```
-<artifactDir>/<run-id>/            # artifactDir default: .panel (repo-relative)
+<artifactDir>/<repo-slug>/<run-id>/  # artifactDir default: ~/.panel (outside the repo)
+                                   # relative artifactDir → repo-relative (legacy escape hatch)
   target.md                        # resolved target description + command(s) used
   round-1/
     diff.patch                     # exactly what was reviewed
@@ -352,9 +354,9 @@ dir.
     findings-sol.json
     findings-glm.json
     clusters.json                  # extension-computed clusters + raisers
-    rebuttal-kimi.md               # deliberation vote payloads + rationales (if contested)
-    rebuttal-sol.md
-    rebuttal-glm.md
+    rebuttal-kimi-d1.md            # deliberation vote payloads, per deliberation round
+    rebuttal-sol-d1.md             # (trail preserved: -d1, -d2, ...)
+    rebuttal-glm-d1.md
     consensus.md                   # human-readable verdicts, votes, dissent
   round-2/                         # /panel-loop only
     fix-commit.txt                 # sha + commit message of the fix round
@@ -367,9 +369,9 @@ dir.
 with: rounds run, findings accepted/rejected per round, validation evidence
 from the fixer, why the loop stopped.
 
-`README.md` instructs users to add `.panel/` to `.gitignore`; the extension
-never modifies `.gitignore` itself. The fixer is instructed to never stage
-`.panel/`.
+Artifacts live outside the repo by default (`~/.panel/<repo-slug>/`), so runs
+never dirty the worktree and no `.gitignore` entry is needed. The fixer is
+instructed to never stage panel/subagent artifact files regardless.
 
 ### 6.1 Round-1 brief (literal text; `{TARGET_DESCRIPTION}` and `{DIFF_PATH}` substituted)
 

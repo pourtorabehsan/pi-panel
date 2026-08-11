@@ -9,6 +9,7 @@ import {
 	makeRunId,
 	renderConsensus,
 	renderFinalReport,
+	resolveArtifactRoot,
 	writeJson,
 	writeText,
 	type ClusterReportEntry,
@@ -96,4 +97,11 @@ test("final report lists rounds, leftovers, and stop reason", () => {
 	assert.match(md, /Leftover open findings/);
 	assert.match(md, /npm test: exit 0/);
 	assert.match(md, /\| 1 \| 2 \| 1 \|/);
+});
+
+test("resolveArtifactRoot: absolute dirs are central + repo-slugged, relative stay repo-local", () => {
+	assert.equal(resolveArtifactRoot("/tmp/panel-runs", "/repo/x", "x-abc"), "/tmp/panel-runs/x-abc");
+	assert.equal(resolveArtifactRoot(".panel", "/repo/x", "x-abc"), "/repo/x/.panel");
+	const home = resolveArtifactRoot("~/.panel", "/repo/x", "x-abc");
+	assert.ok(home.endsWith(join(".panel", "x-abc")) && home.startsWith("/"));
 });

@@ -44,7 +44,10 @@ export const DEFAULT_CONFIG: PanelConfig = {
 	maxDeliberationRounds: 2,
 	maxLoopRounds: 2,
 	autoCommit: true,
-	artifactDir: ".panel",
+	// Default: OUTSIDE the repo (~/.panel/<repo-slug>/<run-id>) so panel runs
+	// never dirty the worktree. A relative value is treated as repo-relative
+	// (legacy escape hatch); absolute or ~/ paths are used as the root.
+	artifactDir: "~/.panel",
 	maxDiffLines: 4000,
 };
 
@@ -86,6 +89,11 @@ function asNonEmptyString(value: unknown, fallback: string, warnings: string[], 
 	if (typeof value === "string" && value.trim()) return value.trim();
 	warnings.push(`panel.${name} must be a non-empty string; using default "${fallback}".`);
 	return fallback;
+}
+
+/** Expand a leading ~/; result may still be relative (repo-relative by design). */
+export function expandHome(p: string): string {
+	return p.startsWith("~/") ? join(homedir(), p.slice(2)) : p;
 }
 
 function asOptionalModel(value: unknown, warnings: string[], name: string): string | null {

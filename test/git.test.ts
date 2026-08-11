@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { GitError, currentHead, isDirty, resolveTarget } from "../src/git.ts";
+import { GitError, currentHead, isDirty, repoSlug, resolveTarget, tryResolveTarget } from "../src/git.ts";
 
 function initRepo(): string {
 	const dir = mkdtempSync(join(tmpdir(), "pi-panel-git-"));
@@ -62,4 +62,24 @@ test("resolveTarget: current branch and unknown targets error", () => {
 test("resolveTarget: not a git repo", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-panel-nogit-"));
 	assert.throws(() => resolveTarget("", dir), /Not a git repository/);
+});
+
+test("tryResolveTarget: null for unknown args, target for branches", () => {
+	const dir = initRepo();
+	assert.equal(tryResolveTarget("definitely-not-a-branch-xyz", dir), null);
+	const g = (args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+	g(["checkout", "-b", "feature"]);
+	writeFileSync(join(dir, "b.txt"), "new\n");
+	g(["add", "b.txt"]);
+	g(["commit", "-m", "feature work"]);
+	const target = tryResolveTarget("main", dir);
+	assert.ok(target);
+	assert.match(target!.description, /vs main/);
+});
+
+test("repoSlug: readable basename + hash, stable per path", () => {
+	const dir = initRepo();
+	const slug = repoSlug(dir);
+	assert.match(slug, /^pi-panel-git-[A-Za-z0-9]+-[a-z0-9]+$/);
+	assert.equal(slug, repoSlug(dir)); // stable
 });

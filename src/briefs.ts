@@ -178,11 +178,11 @@ verify claims directly against the repository.
 const COMMIT_RULES = (message: string) => `- When done, commit ONLY the files you modified:
   \`git add <specific paths>\` then
   \`git commit -m "${message}"\`.
-  Never \`git add -A\` / \`git add .\`. Never stage \`.panel/\` or any file you did
-  not modify.`;
+  Never \`git add -A\` / \`git add .\`. Never stage panel/subagent artifact files or
+  any file you did not modify.`;
 
 const NO_COMMIT_RULES = `- Do NOT commit. Leave the changes in the working tree (autoCommit is disabled).
-  Never stage \`.panel/\` or any file you did not modify.`;
+  Never stage panel/subagent artifact files or any file you did not modify.`;
 
 export function fixerTask(acceptedFindingsJson: string, n: number, k: number, autoCommit: boolean): string {
 	return `Apply the following panel-accepted review findings to the working tree.

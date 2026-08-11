@@ -13,12 +13,13 @@ Single-model review inherits that model's training-data biases. pi-panel's premi
 | `/panel-cancel` | Stop the active run. |
 | `/panel-ping` | Diagnostics: ping the pi-subagents RPC and run a probe workflow. |
 
-`/panel-loop` entry modes (never asks):
+`/panel-loop [target-or-request]` entry modes (never asks):
 
-- **args + clean tree** → an implementer worker implements the request, commits (`panel-loop: round 0 implementation`), then the panel reviews it.
-- **args + dirty tree** → error: commit or stash first (the implementer never commits your pre-existing changes).
+- **args resolve to a git target** (branch, commit SHA, or PR) → loop on already-committed work: panel reviews that diff, then fix rounds commit on top. Example: `/panel-loop main`.
+- **args don't resolve to a git target + clean tree** → treated as an implementation request: an implementer worker implements it, commits (`panel-loop: round 0 implementation`), then the panel reviews it.
+- **implementation request + dirty tree** → error: commit or stash first (the implementer never commits your pre-existing changes).
 - **no args + dirty tree** → panel reviews the current diff, then fix rounds.
-- **no args + clean tree** → error: nothing to review.
+- **no args + clean tree** → error: nothing to review (the message suggests passing a branch/sha).
 
 ## How a panel run works
 
@@ -72,7 +73,7 @@ Or for local development, add to `~/.pi/agent/settings.json`:
     "maxDeliberationRounds": 2,
     "maxLoopRounds": 2,
     "autoCommit": true,
-    "artifactDir": ".panel",
+    "artifactDir": "~/.panel",
     "maxDiffLines": 4000
   }
 }
@@ -85,10 +86,10 @@ Or for local development, add to `~/.pi/agent/settings.json`:
 
 ## Artifacts
 
-Every run writes a PR-style review thread under `<artifactDir>/<run-id>/` (default `.panel/`):
+Every run writes a PR-style review thread under `<artifactDir>/<repo-slug>/<run-id>/`. The default `~/.panel` keeps repos clean — **nothing is written into the worktree**. A relative `artifactDir` (e.g. `.panel`) is treated as repo-relative if you prefer per-repo artifacts:
 
 ```
-.panel/20260811-121500-x3k9/
+~/.panel/daily-a1b2c3/20260811-121500-x3k9/
   target.md              # what was reviewed + the commands used
   round-1/
     diff.patch           # exactly what the panel saw
@@ -96,7 +97,7 @@ Every run writes a PR-style review thread under `<artifactDir>/<run-id>/` (defau
     findings-sol.json
     findings-glm.json
     clusters.json        # extension-computed clusters + votes
-    rebuttal-sol.md      # deliberation votes + verified evidence (if contested)
+    rebuttal-sol-d1.md   # deliberation votes + verified evidence, per deliberation round
     consensus.md         # accepted / rejected-with-dissent / advisory
   round-2/               # /panel-loop only
     fix-commit.txt       # sha + message of the fix round
@@ -105,14 +106,20 @@ Every run writes a PR-style review thread under `<artifactDir>/<run-id>/` (defau
   final-report.md        # rounds table, fixer validation evidence, leftovers, stop reason
 ```
 
-**Add `.panel/` to your `.gitignore`.** The extension never modifies `.gitignore` itself, and the fixer is instructed never to stage `.panel/`.
+**pi-subagents' own artifacts:** pi-subagents writes to `.pi-subagents/` in the repo by default. To keep repos clean, set its artifact preference to the pi session dir in `~/.pi/agent/extensions/subagent/config.json`:
+
+```json
+{ "artifactDir": "session" }
+```
+
+pi-panel runs pass `mission: false`, so no mission records are written either way.
 
 ## First run / smoke test (M1)
 
 1. `pi` in any git repo.
 2. `/panel-ping` — verifies the pi-subagents RPC bridge and spawn plumbing. Expect: "RPC reachable: protocol v1, methods: ping, status, spawn, steer, interrupt, stop, resume", then a probe workflow launch notification.
 3. `/panel-review` on a clean tree → expect the "nothing to review" error (proves command + git wiring).
-4. Make a small change with an obvious bug, then `/panel-review`. Inspect `.panel/<run-id>/round-1/` — three `findings-*.json`, `clusters.json`, `consensus.md`.
+4. Make a small change with an obvious bug, then `/panel-review`. Inspect `~/.panel/<repo-slug>/<run-id>/round-1/` — three `findings-*.json`, `clusters.json`, `consensus.md`.
 
 ## Known limitations (pi-subagents coupling)
 

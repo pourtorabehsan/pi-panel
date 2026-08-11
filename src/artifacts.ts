@@ -5,6 +5,7 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { expandHome } from "./config.ts";
 import type { Cluster, Finding, SeatFinding, SeatVerdict, SeatVote } from "./findings.ts";
 
 export function makeRunId(now: Date = new Date(), random: () => number = Math.random): string {
@@ -18,6 +19,17 @@ export function createRunDir(artifactRoot: string, runId: string): string {
 	const dir = join(artifactRoot, runId);
 	mkdirSync(dir, { recursive: true });
 	return dir;
+}
+
+/**
+ * Resolve the artifact root for a run. Absolute/~/ artifactDir → central
+ * location keyed by repo slug (keeps repos clean); relative artifactDir →
+ * repo-relative (legacy escape hatch).
+ */
+export function resolveArtifactRoot(artifactDir: string, cwd: string, repoSlug: string): string {
+	const expanded = expandHome(artifactDir);
+	if (expanded.startsWith("/")) return join(expanded, repoSlug);
+	return join(cwd, expanded);
 }
 
 export function createRoundDir(runDir: string, n: number): string {
