@@ -96,7 +96,7 @@ async function pickPositiveInt(ctx: ExtensionCommandContext, title: string, curr
 	return n;
 }
 
-/** Tier 2: advanced knobs loop. Mutates and returns the overrides object. */
+/** Tier 2: advanced knobs loop. Mutates and returns the overrides object (exported via runAdvancedSetupOnly). */
 async function runAdvancedSetup(
 	ctx: ExtensionCommandContext,
 	registry: ModelRegistryLike,
@@ -129,6 +129,37 @@ async function runAdvancedSetup(
 			if (model !== undefined) overrides[role] = model; // null = session model
 		}
 	}
+}
+
+/**
+ * Advanced-only path for an already-configured panel: edit the knobs without
+ * re-picking seats. Seeds from the current config so displayed values are
+ * real, and writes the merged result. Returns true if settings were written.
+ */
+export async function runAdvancedSetupOnly(
+	ctx: ExtensionCommandContext,
+	registry: ModelRegistryLike,
+	current: PanelConfig,
+	settingsPath?: string,
+): Promise<boolean> {
+	const overrides: Partial<PanelConfig> = {
+		autoCommit: current.autoCommit,
+		maxLoopRounds: current.maxLoopRounds,
+		maxDeliberationRounds: current.maxDeliberationRounds,
+		implementer: current.implementer,
+		fixer: current.fixer,
+	};
+	await runAdvancedSetup(ctx, registry, overrides, new Set(current.seats.map((s) => s.model)));
+	const summary = [
+		`  seats: ${current.seats.map((s) => s.name).join(", ")} (unchanged)`,
+		`  autoCommit: ${overrides.autoCommit} · maxLoopRounds: ${overrides.maxLoopRounds} · maxDeliberationRounds: ${overrides.maxDeliberationRounds}`,
+		`  implementer: ${overrides.implementer ?? "session model"} · fixer: ${overrides.fixer ?? "session model"}`,
+	].join("\n");
+	const confirmed = await ctx.ui.confirm("Confirm panel settings", `New configuration:\n${summary}\n\nWritten to settings.json under panel.`);
+	if (!confirmed) return false;
+	writePanelConfig(overrides, settingsPath);
+	ctx.ui.notify(`Panel settings saved:\n${summary}`, "info");
+	return true;
 }
 
 /**
