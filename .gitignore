@@ -1,0 +1,5 @@
+node_modules/
+.panel/
+.impl-worker-output.md
+.verify-output.md
+.spec-worker-output.md

@@ -1,0 +1,13 @@
+{
+  "name": "pi-panel",
+  "version": "0.1.0",
+  "description": "Multi-model panel code review for pi: three reviewers on different model families, evidence-based deliberation, deterministic majority vote.",
+  "keywords": ["pi-package"],
+  "private": true,
+  "type": "module",
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": { "extensions": ["./src/index.ts"] }
+}

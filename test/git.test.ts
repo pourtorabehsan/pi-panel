@@ -1,0 +1,65 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { GitError, currentHead, isDirty, resolveTarget } from "../src/git.ts";
+
+function initRepo(): string {
+	const dir = mkdtempSync(join(tmpdir(), "pi-panel-git-"));
+	const g = (args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+	g(["init", "-b", "main"]);
+	g(["config", "user.email", "panel@test"]);
+	g(["config", "user.name", "panel"]);
+	writeFileSync(join(dir, "a.txt"), "one\n");
+	g(["add", "a.txt"]);
+	g(["commit", "-m", "initial"]);
+	return dir;
+}
+
+test("resolveTarget: working tree diff", () => {
+	const dir = initRepo();
+	assert.equal(isDirty(dir), false);
+	writeFileSync(join(dir, "a.txt"), "one\ntwo\n");
+	assert.equal(isDirty(dir), true);
+	const target = resolveTarget("", dir);
+	assert.match(target.description, /uncommitted changes/);
+	assert.match(target.diffText, /\+two/);
+});
+
+test("resolveTarget: empty diff errors", () => {
+	const dir = initRepo();
+	assert.throws(() => resolveTarget("", dir), /Nothing to review/);
+});
+
+test("resolveTarget: commit sha", () => {
+	const dir = initRepo();
+	const sha = currentHead(dir);
+	const target = resolveTarget(sha, dir);
+	assert.match(target.description, new RegExp(`commit ${sha}`));
+	assert.match(target.diffText, /\+one/);
+});
+
+test("resolveTarget: branch diff", () => {
+	const dir = initRepo();
+	const g = (args: string[]) => execFileSync("git", args, { cwd: dir, encoding: "utf8" });
+	g(["checkout", "-b", "feature"]);
+	writeFileSync(join(dir, "b.txt"), "new\n");
+	g(["add", "b.txt"]);
+	g(["commit", "-m", "feature work"]);
+	const target = resolveTarget("main", dir);
+	assert.match(target.description, /vs main/);
+	assert.match(target.diffText, /\+new/);
+});
+
+test("resolveTarget: current branch and unknown targets error", () => {
+	const dir = initRepo();
+	assert.throws(() => resolveTarget("main", dir), GitError); // main IS the current branch
+	assert.throws(() => resolveTarget("does-not-exist", dir), /Unknown review target/);
+});
+
+test("resolveTarget: not a git repo", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-panel-nogit-"));
+	assert.throws(() => resolveTarget("", dir), /Not a git repository/);
+});
