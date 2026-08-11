@@ -312,3 +312,40 @@ test("seat failure with fallbacks exhausted: panel degrades to 2 seats with a no
 	assert.match(consensus, /glm/); // failure noted
 	assert.match(consensus, /Accepted \/ still open \(1\)/); // 2-seat finding still accepted
 });
+
+test("oversized diff: TUI confirm approves; decline aborts before any phase", async () => {
+	const { repo, g } = makeRepo();
+	// make the diff "huge" by capping maxDiffLines at 1
+	const bigConfig = { ...DEFAULT_CONFIG, seats: TEST_SEATS.map((s) => ({ ...s })), maxDiffLines: 1 };
+	const scripted: ScriptedRpc = {
+		descriptions: [],
+		reviewValue: [
+			{ seat: "kimi", ok: true, runId: "k1", structured: { findings: [] }, output: "", error: null },
+			{ seat: "sol", ok: true, runId: "s1", structured: { findings: [] }, output: "", error: null },
+			{ seat: "glm", ok: true, runId: "g1", structured: { findings: [] }, output: "", error: null },
+		],
+	};
+
+	// approve path
+	const approved = new PanelRun({
+		rpc: makeFakeRpc(repo, g, scripted) as never, config: bigConfig, configWarnings: [], cwd: repo,
+		ui: { notify: () => {}, setStatus: () => {}, confirmLargeDiff: async () => true }, onSettled: () => {},
+	}, "review");
+	const { target } = approved.planReview("");
+	await approved.startReview(target);
+	assert.equal(approved.phase, "review"); // phase spawned, not aborted
+
+	// decline path
+	const declined = new PanelRun({
+		rpc: makeFakeRpc(repo, g, scripted) as never, config: bigConfig, configWarnings: [], cwd: repo,
+		ui: { notify: () => {}, setStatus: () => {}, confirmLargeDiff: async () => false }, onSettled: () => {},
+	}, "review");
+	await assert.rejects(() => declined.startReview(target), /Declined/);
+
+	// non-TUI path (no confirm hook): hard error mentioning the settings key
+	const nonTui = new PanelRun({
+		rpc: makeFakeRpc(repo, g, scripted) as never, config: bigConfig, configWarnings: [], cwd: repo,
+		ui: { notify: () => {}, setStatus: () => {} }, onSettled: () => {},
+	}, "review");
+	await assert.rejects(() => nonTui.startReview(target), /maxDiffLines in settings.json/);
+});

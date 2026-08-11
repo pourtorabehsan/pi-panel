@@ -121,6 +121,13 @@ export default function (pi: ExtensionAPI) {
 		currentUi = {
 			notify: (msg, kind) => ctx.ui.notify(msg, kind),
 			setStatus: (key, text) => ctx.ui.setStatus(key, text),
+			// TUI-only: lets the orchestrator confirm oversized diffs in-loop.
+			...(ctx.hasUI && ctx.mode === "tui"
+				? {
+						confirmLargeDiff: (lines: number, max: number) =>
+							ctx.ui.confirm("Large diff", `The diff is ${lines} lines (maxDiffLines=${max}). Panel review cost scales with diff size. Proceed?`),
+					}
+				: {}),
 		};
 	}
 
@@ -149,25 +156,9 @@ export default function (pi: ExtensionAPI) {
 			let run: PanelRun | undefined;
 			try {
 				run = startRun("review");
-				// Resolve the target exactly once (PR targets cost gh network calls).
-				const { target, diffLines } = run.planReview(args);
-				// Oversized-diff guard: confirm in TUI, hard error elsewhere.
-				if (diffLines > run.config.maxDiffLines) {
-					if (ctx.hasUI && ctx.mode === "tui") {
-						const ok = await ctx.ui.confirm(
-							"Large diff",
-							`The diff is ${diffLines} lines (maxDiffLines=${run.config.maxDiffLines}). Panel review cost scales with diff size. Proceed?`,
-						);
-						if (!ok) {
-							run.discard();
-							activeRun = null;
-							ctx.ui.notify("Panel review cancelled.", "info");
-							return;
-						}
-					} else {
-						throw new GitError(`Diff is ${diffLines} lines, above maxDiffLines=${run.config.maxDiffLines}.`);
-					}
-				}
+				// Resolve the target exactly once (PR targets cost gh network calls);
+				// the oversized-diff guard (with TUI confirm) lives in startReview.
+				const { target } = run.planReview(args);
 				await run.startReview(target);
 			} catch (error) {
 				reportStartError(ctx, error, run);

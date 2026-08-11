@@ -52,6 +52,8 @@ import { deliberationScript, reviewRoundScript, workerScript } from "./workflows
 export interface Ui {
 	notify(message: string, kind?: "info" | "warning" | "error"): void;
 	setStatus(key: string, text?: string): void;
+	/** Present in TUI mode: oversized-diff confirmation. Absent → hard error. */
+	confirmLargeDiff?(lines: number, max: number): Promise<boolean>;
 }
 
 export interface OrchestratorDeps {
@@ -144,6 +146,7 @@ export class PanelRun {
 	}
 
 	async startReview(target: ResolvedTarget): Promise<void> {
+		await this.checkDiffSize(target.diffText);
 		this.targetDescription = target.description;
 		writeText(this.runDir, "target.md", `# Review target\n\n${target.description}\n\nCommands:\n${target.commands.map((c) => `- \`${c}\``).join("\n")}`);
 		this.startRound(1, target.diffText, target.description, null);
@@ -776,9 +779,13 @@ export class PanelRun {
 
 	private async checkDiffSize(diffText: string): Promise<void> {
 		const lines = diffText.split("\n").length;
-		if (lines > this.deps.config.maxDiffLines) {
-			throw new GitError(`Diff is ${lines} lines, above maxDiffLines=${this.deps.config.maxDiffLines}. Refusing without confirmation (confirmation is handled by the caller in TUI mode).`);
+		if (lines <= this.deps.config.maxDiffLines) return;
+		if (this.deps.ui.confirmLargeDiff) {
+			const ok = await this.deps.ui.confirmLargeDiff(lines, this.deps.config.maxDiffLines);
+			if (ok) return;
+			throw new GitError(`Diff is ${lines} lines, above maxDiffLines=${this.deps.config.maxDiffLines}. Declined.`);
 		}
+		throw new GitError(`Diff is ${lines} lines, above maxDiffLines=${this.deps.config.maxDiffLines}. Raise panel.maxDiffLines in settings.json to allow it (non-interactive mode cannot confirm).`);
 	}
 
 	private status(text: string): void {
