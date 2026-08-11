@@ -77,11 +77,14 @@ async function pickModel(
 
 	const providerModels = models.filter((m) => m.provider === provider);
 	const options = providerModels.map((m) => `${m.id}${m.name && m.name !== m.id ? ` — ${m.name}` : ""}`);
-	if (allowSessionDefault) options.unshift(SESSION_MODEL);
-	const modelLabel = await ctx.ui.select(`${title} — pick a model (${providerLabel})`, options);
+	const shown = allowSessionDefault ? [SESSION_MODEL, ...options] : options;
+	const modelLabel = await ctx.ui.select(`${title} — pick a model (${providerLabel})`, shown);
 	if (modelLabel === undefined) return undefined;
 	if (modelLabel === SESSION_MODEL) return null;
-	const model = providerModels.find((m) => modelLabel.startsWith(m.id));
+	// Exact match on the option string — a prefix match would resolve
+	// "gpt-5.6-sol — …" to "gpt-5" when gpt-5 sorts earlier in the list.
+	const index = options.indexOf(modelLabel);
+	const model = index >= 0 ? providerModels[index] : undefined;
 	return model ? `${model.provider}/${model.id}` : undefined;
 }
 
