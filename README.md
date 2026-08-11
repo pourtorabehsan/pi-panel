@@ -49,11 +49,11 @@ pi install npm:pi-subagents        # if not already installed
 pi install git:github.com/pourtorabehsan/pi-panel
 ```
 
-Or for local development, add to `~/.pi/agent/settings.json`:
+Or for local development from a clone, add to `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "extensions": ["/Users/ehsan/src/github.com/pourtorabehsan/pi-panel"]
+  "packages": ["/path/to/pi-panel"]
 }
 ```
 
@@ -90,7 +90,7 @@ Or for local development, add to `~/.pi/agent/settings.json`:
 Every run writes a PR-style review thread under `<artifactDir>/<repo-slug>/<run-id>/`. The default `~/.panel` keeps repos clean — **nothing is written into the worktree**. A relative `artifactDir` (e.g. `.panel`) is treated as repo-relative if you prefer per-repo artifacts:
 
 ```
-~/.panel/daily-a1b2c3/20260811-121500-x3k9/
+~/.panel/myrepo-a1b2c3/20260811-121500-x3k9/
   target.md              # what was reviewed + the commands used
   round-1/
     diff.patch           # exactly what the panel saw
@@ -162,10 +162,11 @@ TypeScript loaded via pi's jiti — no build step. Pure logic (clustering, tally
 node --test test/*.test.ts
 ```
 
-Typecheck (adjust the absolute `paths` entry in `tsconfig.json` to your pi install; no emit, not a build step):
+Typecheck (installs the pi type definitions as a devDependency; no emit, not a build step — pi loads the extension via jiti):
 
 ```bash
-npx -p typescript tsc --noEmit -p tsconfig.json
+npm install
+npx tsc --noEmit -p tsconfig.json
 ```
 
 See [SPEC.md](./SPEC.md) for the full protocol, schemas, and design risks.

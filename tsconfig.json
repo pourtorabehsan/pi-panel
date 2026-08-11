@@ -1,6 +1,5 @@
 // For optional local typechecking only (noEmit). pi loads the extension via
-// jiti - there is no build step. Adjust the absolute paths entry below to your
-// local pi installation, then: npx -p typescript tsc --noEmit -p tsconfig.json
+// jiti - there is no build step. Run: npm install && npx tsc --noEmit -p tsconfig.json
 {
   "compilerOptions": {
     "target": "es2022",
@@ -12,7 +11,7 @@
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
     "paths": {
-      "@earendil-works/pi-coding-agent": ["/Users/ehsan/.nvm/versions/node/v24.18.0/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"]
+      "@earendil-works/pi-coding-agent": ["./node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]

@@ -730,7 +730,7 @@ has NO default (empty = unconfigured → setup flow); the rest default as shown:
 No unit-test framework in v1 (logic is thin orchestration over pi-subagents);
 verification is milestone-based smoke tests.
 
-1. **M1 — scaffold + RPC probe.** `pi -e /Users/ehsan/src/github.com/pourtorabehsan/pi-panel`.
+1. **M1 — scaffold + RPC probe.** `pi -e /path/to/pi-panel` (or the settings.json local-package route in README).
    `/panel-review` on a clean tree → expect "nothing to review" error (proves
    command + git wiring). A hidden debug path (or temporary command
    `/panel-ping`) pings RPC and runs a probe workflow

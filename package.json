@@ -14,5 +14,10 @@
     "extensions": [
       "./index.ts"
     ]
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.1",
+    "typebox": "*",
+    "typescript": "^5.5.0"
   }
 }
