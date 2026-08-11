@@ -33,8 +33,16 @@ export function assertGitRepo(cwd: string): void {
 	}
 }
 
-export function isDirty(cwd: string): boolean {
-	return git(["status", "--porcelain"], cwd).length > 0;
+/**
+ * Dirty check excluding tooling-owned dirs (the panel's artifactDir gets
+ * created before this check runs, and .pi-subagents fills up as soon as any
+ * subagent runs). Without exclusions, leftover artifacts falsely read as
+ * "uncommitted user changes".
+ */
+export function isDirty(cwd: string, excludePaths: string[] = []): boolean {
+	if (excludePaths.length === 0) return git(["status", "--porcelain"], cwd).length > 0;
+	const pathspec = ["--", ".", ...excludePaths.map((p) => `:(exclude)${p}`)];
+	return git(["status", "--porcelain", ...pathspec], cwd).length > 0;
 }
 
 /**

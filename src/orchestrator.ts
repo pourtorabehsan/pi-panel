@@ -135,7 +135,7 @@ export class PanelRun {
 	}
 
 	async startLoop(request: string): Promise<void> {
-		const dirty = isDirty(this.deps.cwd);
+		const dirty = isDirty(this.deps.cwd, [this.deps.config.artifactDir, ".pi-subagents"]);
 		if (request.trim()) {
 			if (dirty) throw new GitError("Working tree has uncommitted changes; commit or stash them first — the implementer must never commit pre-existing user changes.");
 			this.targetDescription = `implementation of: ${request.trim()}`;
@@ -605,7 +605,7 @@ export class PanelRun {
 		if (this.deps.config.autoCommit) {
 			const head = currentHead(this.deps.cwd);
 			if (head === this.headBeforeWorker) {
-				throw new Error(`Implementer produced no commit (HEAD unchanged).\nImplementer output:\n${result.output.slice(0, 1000)}`);
+				throw new Error(`Implementer produced no commit (HEAD unchanged). If the request was already implemented and committed, run /panel-review <sha> or /panel-review <base-branch> instead of /panel-loop with a request.\nImplementer output:\n${result.output.slice(0, 1000)}`);
 			}
 			const message = commitMessage(this.deps.cwd, head);
 			if (!message.startsWith("panel-loop:")) {

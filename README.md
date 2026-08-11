@@ -142,6 +142,8 @@ These are enforced by pi-subagents' current runtime behavior, verified against i
 | Seat failed / "panel degraded" warnings | A model id is wrong or a provider is unauthenticated. Check `panel.seats` against `pi --list-models`. The panel runs fine with 2 seats; 2 failures abort the run. |
 | "deliberation used fresh-seat fallback" in consensus notes | The retained-resume path wasn't available for a seat; deliberation fell back to a fresh reviewer reading the round artifacts (weaker context, still correct votes). |
 | Orphaned run after `/reload` or restart | In-memory state is lost by design (v1). Artifacts are on disk; just re-run the command. |
+| "Detached for intercom coordination" | A child tried to ask its supervisor a question, which kills RPC-spawned workflows. All panel briefs forbid intercom; if you still see this, the child ignored its instructions — report it and re-run. |
+| "commit or stash them first" but you have no real changes | Was a bug: tooling dirs (`.panel/`, `.pi-subagents/`) counted as dirty. Fixed — they're excluded from the check. Update if you see this. |
 | Expensive runs | Large diffs × 3 models × deliberation rounds cost real tokens. Keep diffs small or lower `maxDiffLines`. |
 
 ## Development

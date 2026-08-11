@@ -3,6 +3,17 @@
  * Pure string builders with placeholder substitution.
  */
 
+/**
+ * Critical: panel children run inside RPC-spawned workflows with no human
+ * supervisor on the other end. A child calling intercom/contact_supervisor
+ * DETACHES the run and fails the whole workflow (observed live). Every child
+ * brief must carry this rule.
+ */
+const NO_INTERCOM = `- Work fully autonomously: NEVER use intercom, contact_supervisor, or ask
+  questions. There is no human supervisor for this run, and contacting one
+  detaches the workflow and fails it. Make your best evidence-based decision
+  and proceed.`;
+
 export function round1Brief(targetDescription: string, diffPath: string): string {
 	return `You are one seat on a three-model review panel. You are reviewing: ${targetDescription}.
 The full diff under review is at ${diffPath} — read it first.
@@ -39,6 +50,7 @@ Before you flag something:
 
 Constraints:
 - You are READ-ONLY. Never edit, stage, or commit any file.
+${NO_INTERCOM}
 - Return only structured output per the output schema. No prose summary.`;
 }
 
@@ -66,6 +78,7 @@ Your tasks, in order:
 
 Constraints:
 - READ-ONLY. Never edit, stage, or commit.
+${NO_INTERCOM}
 - Return only structured output per the output schema (verdicts + newFindings).`;
 }
 
@@ -125,6 +138,7 @@ For each dispute, cast a vote on the question "is this finding fully resolved?":
 	}
 
 	parts.push(`Rules:
+${NO_INTERCOM}
 - Change (or hold) your position ONLY on evidence you verified yourself with
   tools this round. Re-open the files. Run the commands. Check the claim.
 - If you raised the finding: defend it with stronger verified evidence, or
@@ -176,6 +190,7 @@ export function fixerTask(acceptedFindingsJson: string, n: number, k: number, au
 ${acceptedFindingsJson}
 
 Rules:
+${NO_INTERCOM}
 - Apply ONLY these findings. No drive-by changes, no reformatting, no scope
   growth. If a suggested fix is wrong or incomplete, implement the minimal
   correct fix for the finding's claim instead.
@@ -193,6 +208,12 @@ export function implementerTask(request: string, autoCommit: boolean): string {
 ${request}
 
 Rules:
+${NO_INTERCOM}
+- First check \`git log\` and \`git status\`: if the request already appears fully
+  implemented and committed, do NOT create an empty or meaningless commit —
+  report that (with the commit sha) as your output and stop.
+- If the request is too vague to implement, do your best interpretation of the
+  most reasonable concrete change; never stop to ask.
 - Keep the change scoped to the request. Follow existing conventions.
 - Run the narrowest meaningful validation (build/test/lint). Report exact
   commands and exit codes.
