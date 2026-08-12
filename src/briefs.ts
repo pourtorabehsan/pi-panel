@@ -185,7 +185,9 @@ const COMMIT_RULES = (round: string) => `- When done, commit ONLY the files you 
     \`Panel-Loop: ${round}\`
   Example: \`git commit -m "vtbackups: scope storage layout" -m "Panel-Loop: ${round}"\`
   Never \`git add -A\` / \`git add .\`. Never stage panel/subagent artifact files or
-  any file you did not modify.`;
+  any file you did not modify.
+  NEVER use \`git commit --amend\` or any commit rewriting (rebase, squash).
+  Always create a new commit — preserving history is required.`;
 
 const NO_COMMIT_RULES = `- Do NOT commit. Leave the changes in the working tree (autoCommit is disabled).
   Never stage panel/subagent artifact files or any file you did not modify.`;
